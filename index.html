@@ -1564,9 +1564,10 @@ let rankSortCol = 'fg_rank';
 let rankSortDir = 'asc';
 let rankFilter  = 'all';  // 'all', 'top100', 'top500', 'roster', 'hitter', 'pitcher'
 let rankSearch  = '';
+let rankOrg     = '';     // filter by org abbreviation e.g. 'NYY'
 
 // Columns to fetch — excludes heavy grade columns initially
-const RANK_COLS = 'mlb_id,name,fg_rank,fg_fv,eta,risk,current_level,hit_future,game_future,raw_future,spd_future,fld_future,fb_future,sl_future,cb_future,ch_future,cmd_future,hit_present,game_present,raw_present,spd_present,fld_present,fb_present,sl_present,cb_present,ch_present,cmd_present';
+const RANK_COLS = 'mlb_id,name,fg_rank,fg_org_rank,fg_fv,eta,risk,current_level,hit_future,game_future,raw_future,spd_future,fld_future,fb_future,sl_future,cb_future,ch_future,cmd_future,hit_present,game_present,raw_present,spd_present,fld_present,fb_present,sl_present,cb_present,ch_present,cmd_present';
 
 async function loadRankings() {
   if (rankingsCache && Date.now() - rankingsCache.ts < 60 * 60 * 1000) return;
@@ -1578,7 +1579,7 @@ async function loadRankings() {
   }
 
   try {
-    const url = `${SUPABASE_URL}/rest/v1/prospect_rankings?select=${RANK_COLS}&order=fg_rank.asc.nullslast&limit=600`;
+    const url = `${SUPABASE_URL}/rest/v1/prospect_rankings?select=${RANK_COLS}&order=fg_rank.asc.nullslast&limit=1000`;
     console.log('[Rankings] Fetching:', url);
     const r = await fetch(url, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -1663,17 +1664,23 @@ function buildRow(p, myIds, isHitterView) {
   const level   = p.current_level ? `<span style="font-family:'DM Mono',monospace;font-size:.65rem;">${p.current_level}</span>` : '—';
   const hg = `${gradeCell(p.hit_present,p.hit_future)}${gradeCell(p.game_present,p.game_future)}${gradeCell(p.raw_present,p.raw_future)}${gradeCell(p.spd_present,p.spd_future)}${gradeCell(p.fld_present,p.fld_future)}`;
   const pg = `${gradeCell(p.fb_present,p.fb_future)}${gradeCell(p.sl_present,p.sl_future)}${gradeCell(p.cb_present,p.cb_future)}${gradeCell(p.ch_present,p.ch_future)}${gradeCell(p.cmd_present,p.cmd_future)}`;
-  return `<tr class="${rowCls}"><td class="rank-num">${p.fg_rank||'—'}</td><td><span class="rank-name ${nameCls}">${esc(p.name||'')}</span>${myBadge}</td><td>${fv}</td><td>${etaDisplay(p.eta)}</td><td>${risk}</td><td>${level}</td>${isHitterView?hg:pg}</tr>`;
+  const orgRank = p.fg_org_rank ? `<span class="rank-num">#${p.fg_org_rank}</span>` : '—';
+  return `<tr class="${rowCls}"><td class="rank-num">${p.fg_rank||'—'}</td><td><span class="rank-name ${nameCls}">${esc(p.name||'')}</span>${myBadge}</td><td>${fv}</td><td>${etaDisplay(p.eta)}</td><td>${risk}</td><td>${level}</td><td>${orgRank}</td>${isHitterView?hg:pg}</tr>`;
 }
 
 function getFilteredSortedList() {
   const myIds = new Set(players.map(p => p.mlb_id));
   let list = (rankingsCache?.prospects || []).filter(p => {
-    if (rankFilter === 'top100')  return p.fg_rank <= 100;
-    if (rankFilter === 'top500')  return p.fg_rank <= 500;
-    if (rankFilter === 'roster')  return myIds.has(p.mlb_id);
-    if (rankFilter === 'hitter')  return isHitterProspect(p);
-    if (rankFilter === 'pitcher') return !isHitterProspect(p);
+    if (rankFilter === 'top100')  { if (!p.fg_rank || p.fg_rank > 100)  return false; }
+    if (rankFilter === 'top500')  { if (!p.fg_rank || p.fg_rank > 500)  return false; }
+    if (rankFilter === 'roster')  { if (!myIds.has(p.mlb_id))           return false; }
+    if (rankFilter === 'hitter')  { if (!isHitterProspect(p))           return false; }
+    if (rankFilter === 'pitcher') { if (isHitterProspect(p))            return false; }
+    // Org filter — match players on our roster who belong to that org
+    if (rankOrg) {
+      const orgIds = new Set(players.filter(pl => pl.org === rankOrg).map(pl => pl.mlb_id));
+      if (!orgIds.has(p.mlb_id)) return false;
+    }
     return true;
   });
   if (rankSearch.trim()) {
@@ -1720,6 +1727,11 @@ function renderRankingsView() {
   const isHitterView = rankFilter !== 'pitcher';
   const updatedStr = new Date(rankingsCache.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 
+  // Build org options from players on our roster
+  const orgList = [...new Set(players.map(p => p.org).filter(Boolean))].sort();
+  const orgOptions = `<option value="">All Orgs</option>` +
+    orgList.map(o => `<option value="${o}" ${rankOrg===o?'selected':''}>${o}</option>`).join('');
+
   function thSort(col, label, title='') {
     const active = rankSortCol === col;
     const arrow  = active ? (rankSortDir === 'asc' ? ' ↑' : ' ↓') : '';
@@ -1741,6 +1753,9 @@ function renderRankingsView() {
       <button class="rank-filter-chip ${rankFilter==='roster'?'active':''}"  onclick="setRankFilter('roster')">My Roster (${rosterHits})</button>
       <button class="rank-filter-chip ${rankFilter==='hitter'?'active':''}"  onclick="setRankFilter('hitter')">Hitters</button>
       <button class="rank-filter-chip ${rankFilter==='pitcher'?'active':''}" onclick="setRankFilter('pitcher')">Pitchers</button>
+      <select class="sort-select" onchange="rankOrg=this.value;renderRankingsView()" style="font-size:.78rem;padding:5px 10px;">
+        ${orgOptions}
+      </select>
       <input class="rank-search" id="rank-search-input" type="text" placeholder="Search name…"
         value="${esc(rankSearch)}"
         oninput="clearTimeout(rankSearchTimer);rankSearchTimer=setTimeout(()=>{rankSearch=this.value;renderRankingsView();},250)" />
@@ -1749,12 +1764,13 @@ function renderRankingsView() {
     <div class="rankings-table-wrap">
       <table class="rankings-table">
         <thead><tr>
-          ${thSort('fg_rank','Rank')}
+          ${thSort('fg_rank','Rank','Overall FanGraphs rank')}
           ${thSort('name','Name')}
-          ${thSort('fg_fv','FV')}
-          ${thSort('eta','ETA')}
+          ${thSort('fg_fv','FV','Future Value (20-80)')}
+          ${thSort('eta','ETA','Expected MLB debut')}
           ${thSort('risk','Risk')}
           ${thSort('current_level','Level')}
+          ${thSort('fg_org_rank','Org #','Rank within organization')}
           ${gradeHeaders}
         </tr></thead>
         <tbody id="rank-tbody">${initialRows}</tbody>
@@ -1787,6 +1803,12 @@ function loadMoreRankings() {
 
 function setRankFilter(f) {
   rankFilter = f;
+  // Auto-sort by org rank when roster view is selected
+  if (f === 'roster' && rankSortCol === 'fg_rank') {
+    rankSortCol = 'fg_org_rank';
+  } else if (f !== 'roster' && rankSortCol === 'fg_org_rank') {
+    rankSortCol = 'fg_rank';
+  }
   renderRankingsView();
 }
 
