@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MiLB Prospect Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -192,6 +193,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   </div>
   <div class="header-actions">
     <span class="last-updated" id="last-updated">—</span>
+    <span id="sync-dot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;margin-left:4px;"></span>
+    <span id="sync-text" style="font-family:'DM Mono',monospace;font-size:.65rem;color:var(--muted);">connecting…</span>
+    <span id="sync-status" style="font-family:'DM Mono',monospace;font-size:.68rem;display:inline-flex;align-items:center;gap:5px;">
+      <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;"></span>
+      <span id="sync-text" style="color:var(--muted);">connecting…</span>
+    </span>
     <button class="btn btn-ghost" id="refresh-btn" onclick="refreshAllStats()">
       <span class="refresh-icon">↻</span> Refresh
     </button>
@@ -271,7 +278,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const MLB_API   = 'https://statsapi.mlb.com/api/v1';
+const MLB_API       = 'https://statsapi.mlb.com/api/v1';
+const SUPABASE_URL  = 'https://genrmsueuonijikaqwtj.supabase.co';
+const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdlbnJtc3VldW9uaWppa2Fxd3RqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMjY2NzAsImV4cCI6MjA5MjkwMjY3MH0.CmQbBF-HiONEjKOGcUfzdpVxueBLsA6s9WjRmInIpj0';
+const DB           = () => window._sb || (window._sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
 const SPORT_IDS = [1, 11, 12, 13, 14, 16, 17];
 const SPORT_LABELS = {1:'MLB', 11:'AAA', 12:'AA', 13:'A+', 14:'A', 16:'Rk', 17:'DSL'};
 const ALL_YEARS = ['2026','2025','2024','2023'];
@@ -286,19 +296,28 @@ let currentYear   = '2026';
 let addType       = 'hitter';
 let isRefreshing  = false;
 let expandedCards = new Set(); // mlb_ids with splits expanded
-let expandedYears = new Set(); // mlb_ids with year drill-down open in "all years" view
+let expandedYears  = new Set(); // mlb_ids with year drill-down open in "all years" view
+let realtimeSub    = null;
 
 // ── PERSISTENCE ───────────────────────────────────────────────────────────────
-function saveRoster() {
-  localStorage.setItem('milb_roster_v2', JSON.stringify(players));
+// saveRoster() removed — roster is now persisted in Supabase
+
+async function loadRoster() {
+  try {
+    const { data, error } = await DB().from('players').select('*').order('created_at');
+    if (error) throw error;
+    players = (data||[]).map(r => ({name:r.name, mlb_id:r.mlb_id, pos:r.pos, org:r.org, type:r.type}));
+    if (players.length === 0) await seedDefaultRoster();
+  } catch(e) {
+    console.error('loadRoster:', e);
+    toast('Could not connect to database — showing cached data', 'error');
+    const saved = localStorage.getItem('milb_roster_v2');
+    if (saved) try { players = JSON.parse(saved); } catch(_){}
+  }
 }
 
-function loadRoster() {
-  const saved = localStorage.getItem('milb_roster_v2');
-  if (saved) {
-    try { players = JSON.parse(saved); return; } catch(e) {}
-  }
-  players = [
+async function seedDefaultRoster() {
+  const defaults = [
     {name:"Termarr Johnson",    mlb_id:702261,  pos:"2B",  org:"PIT", type:"hitter"},
     {name:"Walker Jenkins",     mlb_id:805805,  pos:"OF",  org:"MIN", type:"hitter"},
     {name:"George Lombard Jr.", mlb_id:806146,  pos:"SS",  org:"NYY", type:"hitter"},
@@ -318,7 +337,48 @@ function loadRoster() {
     {name:"Jose Urbina",        mlb_id:808250,  pos:"SP",  org:"TB",  type:"pitcher"},
     {name:"Steven Echavarria",  mlb_id:806064,  pos:"SP",  org:"ATH", type:"pitcher"},
   ];
-  saveRoster();
+  const { error } = await DB().from('players').insert(defaults);
+  if (!error) { players = defaults; toast('Default roster seeded!','success'); }
+}
+
+async function addPlayerToDb(p) {
+  const { error } = await DB().from('players').insert({mlb_id:p.mlb_id, name:p.name, pos:p.pos, org:p.org, type:p.type, added_by:'user'});
+  if (error) { console.error('addPlayerToDb:', error); toast('Failed to save player','error'); return false; }
+  return true;
+}
+
+async function removePlayerFromDb(mlb_id) {
+  const { error } = await DB().from('players').delete().eq('mlb_id', mlb_id);
+  if (error) { console.error('removePlayerFromDb:', error); toast('Failed to remove player','error'); return false; }
+  return true;
+}
+
+function subscribeRealtime() {
+  if (realtimeSub) return;
+  realtimeSub = DB().channel('players-changes')
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'players'}, payload => {
+      const row = payload.new;
+      if (!players.find(p => p.mlb_id === row.mlb_id)) {
+        const p = {name:row.name, mlb_id:row.mlb_id, pos:row.pos, org:row.org, type:row.type};
+        players.push(p);
+        Promise.all(ALL_YEARS.map(y => loadPlayerYear(p, y))).then(() => { saveStatsCache(); renderRoster(); renderSummary(); });
+        fetchBio(row.mlb_id).then(() => renderRoster());
+        toast(row.name + ' added by teammate!', 'success');
+      }
+    })
+    .on('postgres_changes', {event:'DELETE', schema:'public', table:'players'}, payload => {
+      const mid = payload.old.mlb_id;
+      const p = players.find(x => x.mlb_id === mid);
+      if (p) { players = players.filter(x => x.mlb_id !== mid); renderRoster(); renderSummary(); toast(p.name + ' removed by teammate', 'success'); }
+    })
+    .subscribe(status => {
+      const dot = document.getElementById('sync-dot');
+      const txt = document.getElementById('sync-text');
+      if (!dot) return;
+      if (status === 'SUBSCRIBED')    { dot.style.background='var(--green)'; txt.style.color='var(--green)'; txt.textContent='live sync ●'; }
+      else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') { dot.style.background='var(--red)'; txt.style.color='var(--red)'; txt.textContent='disconnected'; }
+      else { dot.style.background='var(--amber)'; txt.style.color='var(--amber)'; txt.textContent='connecting…'; }
+    });
 }
 
 function cacheKey(mlb_id, year) { return `${mlb_id}_${year}`; }
@@ -584,7 +644,7 @@ async function refreshAllStats() {
   }
 
   await Promise.all(players.map(p => loadPlayerYear(p, currentYear)));
-  saveStatsCache();
+  saveStatsCache(); // stats cache stays local
 
   const now = new Date();
   document.getElementById('last-updated').textContent =
@@ -1155,12 +1215,16 @@ async function searchPlayer() {
 async function addFromSearch(mlb_id, name, pos, team) {
   if (players.find(p=>p.mlb_id===mlb_id)) { toast(`${name} already on roster`,'error'); return; }
   const p = {name, mlb_id, pos, org:team, type:addType};
-  players.push(p);
-  saveRoster();
+
+  // Save to Supabase first
+  const ok = await addPlayerToDb(p);
+  if (!ok) return;
+
+  // Realtime will add to local array for teammate, but we add immediately for ourselves
+  if (!players.find(x => x.mlb_id === mlb_id)) players.push(p);
 
   toast(`${name} added! Loading stats…`, 'success');
 
-  // Load bio and stats for all years in parallel
   await Promise.all([fetchBio(mlb_id), ...ALL_YEARS.map(y => loadPlayerYear(p, y))]);
   saveStatsCache();
 
@@ -1183,27 +1247,34 @@ function addManual() {
   if (!name||!id) { toast('Name and MLB ID required','error'); return; }
   if (players.find(p=>p.mlb_id===id)) { toast('Already on roster','error'); return; }
   const p = {name, mlb_id:id, pos, org:'?', type:addType};
-  players.push(p);
-  saveRoster();
   document.getElementById('manual-name').value='';
   document.getElementById('manual-id').value='';
   document.getElementById('manual-pos').value='';
-  Promise.all([fetchBio(id), ...ALL_YEARS.map(y=>loadPlayerYear(p,y))]).then(()=>{
-    saveStatsCache(); saveBios(); renderRoster(); renderSummary();
+
+  addPlayerToDb(p).then(ok => {
+    if (!ok) return;
+    if (!players.find(x => x.mlb_id === id)) players.push(p);
+    Promise.all([fetchBio(id), ...ALL_YEARS.map(y=>loadPlayerYear(p,y))]).then(()=>{
+      saveStatsCache(); saveBios(); renderRoster(); renderSummary();
+    });
+    renderRoster();
+    renderSummary();
+    toast(`${name} added!`,'success');
   });
-  renderRoster();
-  renderSummary();
-  toast(`${name} added!`,'success');
 }
 
-function removePlayer(mlb_id) {
+async function removePlayer(mlb_id) {
   const p = players.find(x=>x.mlb_id===mlb_id);
   if (!p) return;
-  if (!confirm(`Remove ${p.name} from your roster?`)) return;
+  if (!confirm(`Remove ${p.name} from your roster? This will remove them for everyone.`)) return;
+
+  const ok = await removePlayerFromDb(mlb_id);
+  if (!ok) return;
+
   players = players.filter(x=>x.mlb_id!==mlb_id);
   ALL_YEARS.forEach(y => delete statsCache[cacheKey(mlb_id,y)]);
   expandedCards.delete(mlb_id);
-  saveRoster(); saveStatsCache();
+  saveStatsCache();
   renderRoster(); renderSummary();
   toast(`${p.name} removed`,'success');
 }
@@ -1242,12 +1313,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closePanel();});
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 async function init() {
-  loadRoster();
   loadStatsCache();
   loadBios();
   renderYearChips();
   renderSummary();
   renderRoster();
+
+  // Load roster from Supabase
+  await loadRoster();
+  subscribeRealtime();
 
   // Load current year stats for any missing players
   const missing = players.filter(p => p.mlb_id && !statsCache[cacheKey(p.mlb_id, currentYear)]);
