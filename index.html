@@ -178,6 +178,35 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 ::-webkit-scrollbar{width:6px;height:6px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+
+/* ── GAME LOG VIEW ── */
+.gamelog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;}
+.gamelog-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden;}
+.gamelog-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);opacity:0;}
+.gamelog-card:hover::before{opacity:1;}
+.gamelog-card.pitcher-card::before{background:var(--accent2);}
+.gamelog-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
+.gamelog-name{font-weight:600;font-size:.92rem;color:var(--text);}
+.gamelog-meta{font-size:.72rem;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace;}
+.gamelog-entries{display:flex;flex-direction:column;gap:6px;}
+.gamelog-entry{background:var(--surface2);border-radius:8px;padding:8px 10px;}
+.gamelog-entry-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.gamelog-date{font-family:'DM Mono',monospace;font-size:.65rem;color:var(--muted);}
+.gamelog-opponent{font-family:'DM Mono',monospace;font-size:.65rem;color:var(--muted);}
+.gamelog-result{font-family:'DM Mono',monospace;font-size:.65rem;padding:1px 6px;border-radius:3px;}
+.gamelog-result.win{background:rgba(79,255,176,.1);color:var(--green);border:1px solid rgba(79,255,176,.25);}
+.gamelog-result.loss{background:rgba(255,79,79,.1);color:var(--red);border:1px solid rgba(255,79,79,.25);}
+.gamelog-result.nd{background:var(--surface3);color:var(--muted);border:1px solid var(--border2);}
+.gamelog-stats{display:flex;gap:4px;flex-wrap:wrap;}
+.gl-stat{background:var(--surface3);border-radius:4px;padding:3px 7px;text-align:center;min-width:36px;}
+.gl-stat-lbl{font-family:'DM Mono',monospace;font-size:.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+.gl-stat-val{font-family:'DM Mono',monospace;font-size:.78rem;font-weight:500;color:var(--text);}
+.gl-stat-val.hot{color:var(--accent);}
+.gl-stat-val.good{color:var(--green);}
+.gl-stat-val.bad{color:var(--red);}
+.gamelog-loading{text-align:center;padding:1.5rem;color:var(--muted);font-size:.8rem;font-style:italic;}
+.gamelog-empty{text-align:center;padding:1rem;color:var(--muted);font-size:.75rem;font-style:italic;}
+.new-badge{font-family:'DM Mono',monospace;font-size:.58rem;background:rgba(232,255,71,.15);border:1px solid rgba(232,255,71,.35);color:var(--accent);padding:2px 6px;border-radius:3px;margin-left:4px;}
 </style>
 </head>
 <body>
@@ -192,10 +221,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <span class="last-updated" id="last-updated">—</span>
     <span id="sync-dot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;margin-left:4px;"></span>
     <span id="sync-text" style="font-family:'DM Mono',monospace;font-size:.65rem;color:var(--muted);">connecting…</span>
-    <span id="sync-status" style="font-family:'DM Mono',monospace;font-size:.68rem;display:inline-flex;align-items:center;gap:5px;">
-      <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;"></span>
-      <span id="sync-text" style="color:var(--muted);">connecting…</span>
-    </span>
     <button class="btn btn-ghost" id="refresh-btn" onclick="refreshAllStats()">
       <span class="refresh-icon">↻</span> Refresh
     </button>
@@ -216,6 +241,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <div class="tab" onclick="switchTab('pitchers',this)">Pitchers</div>
   <div class="tab" onclick="switchTab('active',this)">Has Stats</div>
   <div class="tab" onclick="switchTab('nostats',this)">No Stats Yet</div>
+  <div class="tab" onclick="switchTab('gamelogs',this)">Recent Activity</div>
 </div>
 
 <!-- MAIN -->
@@ -291,6 +317,7 @@ let isRefreshing  = false;
 let expandedCards = new Set(); // mlb_ids with splits expanded
 let expandedYears  = new Set(); // mlb_ids with year drill-down open in "all years" view
 let realtimeSub    = null;
+let gameLogCache   = {};   // key: mlb_id -> {ts, hitterGames:[], pitcherGames:[]}
 
 // ── PERSISTENCE ───────────────────────────────────────────────────────────────
 // saveRoster() removed — roster is now persisted in Supabase
@@ -1287,11 +1314,222 @@ async function removePlayer(mlb_id) {
 }
 
 // ── UI HELPERS ────────────────────────────────────────────────────────────────
+// ── GAME LOG FUNCTIONS ────────────────────────────────────────────────────────
+
+async function fetchGameLog(p) {
+  const key = p.mlb_id;
+  const cached = gameLogCache[key];
+  // Use cache if less than 30 min old
+  if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return cached;
+
+  const group  = p.type === 'pitcher' ? 'pitching' : 'hitting';
+  const limit  = p.type === 'pitcher' ? 5 : 10; // fetch a few extra, display fewer
+  const games  = [];
+
+  // Try current year first, fall back to prior year if nothing found
+  for (const year of ALL_YEARS) {
+    for (const sportId of [1, 11, 12, 13, 14, 16]) {
+      try {
+        const url = `${MLB_API}/people/${p.mlb_id}/stats?stats=gameLog&season=${year}&group=${group}&sportId=${sportId}&limit=${limit}`;
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const d = await r.json();
+        for (const block of (d.stats || [])) {
+          for (const split of (block.splits || [])) {
+            split._year    = year;
+            split._sportId = sportId;
+            split._level   = SPORT_LABELS[sportId] || '?';
+            games.push(split);
+          }
+        }
+      } catch(e) {}
+    }
+    if (games.length > 0) break; // found games this year, stop
+  }
+
+  // Sort by date descending
+  games.sort((a, b) => {
+    const da = a.date || a.gameDate || '';
+    const db = b.date || b.gameDate || '';
+    return db.localeCompare(da);
+  });
+
+  const result = { ts: Date.now(), games: games.slice(0, limit) };
+  gameLogCache[key] = result;
+  return result;
+}
+
+function fmtGameDate(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  } catch(e) { return dateStr.slice(5, 10); }
+}
+
+function makeHitterGameEntry(split) {
+  const s    = split.stat || {};
+  const date = fmtGameDate(split.date || split.gameDate);
+  const opp  = split.opponent?.abbreviation || split.team?.abbreviation || '?';
+  const ha   = split.isHome === false ? `@ ${opp}` : `vs ${opp}`;
+  const ab   = s.atBats    || 0;
+  const h    = s.hits      || 0;
+  const hr   = s.homeRuns  || 0;
+  const rbi  = s.rbi       || 0;
+  const bb   = s.baseOnBalls || 0;
+  const sb   = s.stolenBases || 0;
+  const k    = s.strikeOuts || 0;
+  const avg  = ab ? (h/ab).toFixed(3).replace(/^0/,'') : '—';
+
+  return `<div class="gamelog-entry">
+    <div class="gamelog-entry-header">
+      <span class="gamelog-date">${date}</span>
+      <span class="gamelog-opponent">${ha}</span>
+      <span class="gamelog-meta" style="margin:0;">${split._level}</span>
+    </div>
+    <div class="gamelog-stats">
+      <div class="gl-stat"><div class="gl-stat-lbl">AB</div><div class="gl-stat-val">${ab}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">H</div><div class="gl-stat-val ${h>=3?'good':h===0&&ab>=3?'bad':''}">${h}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">HR</div><div class="gl-stat-val ${hr>0?'hot':''}">${hr}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">RBI</div><div class="gl-stat-val ${rbi>=3?'good':''}">${rbi}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">BB</div><div class="gl-stat-val">${bb}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">K</div><div class="gl-stat-val ${k>=3?'bad':''}">${k}</div></div>
+      ${sb>0?`<div class="gl-stat"><div class="gl-stat-lbl">SB</div><div class="gl-stat-val good">${sb}</div></div>`:''}
+    </div>
+  </div>`;
+}
+
+function makePitcherGameEntry(split) {
+  const s      = split.stat || {};
+  const date   = fmtGameDate(split.date || split.gameDate);
+  const opp    = split.opponent?.abbreviation || split.team?.abbreviation || '?';
+  const ha     = split.isHome === false ? `@ ${opp}` : `vs ${opp}`;
+  const raw    = parseFloat(s.inningsPitched || 0);
+  const full   = Math.floor(raw);
+  const frac   = Math.round((raw - full) * 10);
+  const ip     = `${full}.${frac}`;
+  const er     = s.earnedRuns  || 0;
+  const so     = s.strikeOuts  || 0;
+  const bb     = s.baseOnBalls || 0;
+  const hits   = s.hits        || 0;
+  const w      = s.wins        || 0;
+  const l      = s.losses      || 0;
+  const sv     = s.saves       || 0;
+  const ipOuts = full * 3 + frac;
+  const era    = ipOuts ? ((er * 27) / ipOuts).toFixed(2) : '—';
+  const dec    = w ? 'W' : l ? 'L' : sv ? 'SV' : 'ND';
+  const decCls = w||sv ? 'win' : l ? 'loss' : 'nd';
+  const eraF   = parseFloat(era) || 99;
+
+  return `<div class="gamelog-entry">
+    <div class="gamelog-entry-header">
+      <span class="gamelog-date">${date}</span>
+      <span class="gamelog-opponent">${ha}</span>
+      <span class="gamelog-result ${decCls}">${dec}</span>
+      <span class="gamelog-meta" style="margin:0;">${split._level}</span>
+    </div>
+    <div class="gamelog-stats">
+      <div class="gl-stat"><div class="gl-stat-lbl">IP</div><div class="gl-stat-val ${ipOuts>=15?'good':ipOuts<9?'bad':''}">${ip}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">H</div><div class="gl-stat-val">${hits}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">ER</div><div class="gl-stat-val ${er===0?'good':er>=4?'bad':''}">${er}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">BB</div><div class="gl-stat-val ${bb>=3?'bad':''}">${bb}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">K</div><div class="gl-stat-val ${so>=7?'good':''}">${so}</div></div>
+      <div class="gl-stat"><div class="gl-stat-lbl">ERA</div><div class="gl-stat-val ${eraF<3?'good':eraF>6?'bad':''}">${era}</div></div>
+    </div>
+  </div>`;
+}
+
+function makeGameLogCard(p, logData) {
+  const games   = logData?.games || [];
+  const display = p.type === 'pitcher' ? games.slice(0, 2) : games.slice(0, 7);
+  const age     = getAge(p.mlb_id);
+  const ageBadge = age ? `<span class="badge" style="background:#1f1a2e;border-color:#4a3a7a;color:#b09ae0;">Age ${age}</span>` : '';
+
+  // Check if recently added (within last 7 days based on created_at if available)
+  const isNew = p._createdAt && (Date.now() - new Date(p._createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000;
+  const newBadge = isNew ? `<span class="new-badge">NEW</span>` : '';
+
+  let entriesHtml = '';
+  if (games.length === 0) {
+    entriesHtml = `<div class="gamelog-empty">No recent games found</div>`;
+  } else {
+    entriesHtml = display.map(split =>
+      p.type === 'pitcher' ? makePitcherGameEntry(split) : makeHitterGameEntry(split)
+    ).join('');
+  }
+
+  const topLevel = games.length > 0 ? (games[0]._level || '?') : '—';
+
+  return `<div class="gamelog-card ${p.type === 'pitcher' ? 'pitcher-card' : ''}">
+    <div class="gamelog-header">
+      <div>
+        <div class="gamelog-name">${esc(p.name)}${newBadge}</div>
+        <div class="gamelog-meta">
+          ${p.pos} · ${topLevel}
+          ${ageBadge}
+        </div>
+      </div>
+      <span style="font-family:'DM Mono',monospace;font-size:.65rem;color:var(--muted);">
+        ${p.type === 'pitcher' ? 'Last 2 outings' : 'Last 7 games'}
+      </span>
+    </div>
+    <div class="gamelog-entries">${entriesHtml}</div>
+  </div>`;
+}
+
+async function renderGameLogs() {
+  const container = document.getElementById('roster-container');
+  container.innerHTML = `<div class="gamelog-loading"><span class="loading-spinner"></span> Loading recent game logs…</div>`;
+
+  // Fetch all game logs in parallel first
+  const logMap = {};
+  await Promise.all(players.map(async p => {
+    logMap[p.mlb_id] = await fetchGameLog(p);
+  }));
+
+  // Sort each group by most recent game date descending
+  function mostRecentDate(p) {
+    const games = logMap[p.mlb_id]?.games || [];
+    if (games.length === 0) return '';
+    return games[0].date || games[0].gameDate || '';
+  }
+
+  const hitters  = [...players].filter(p => p.type === 'hitter')
+    .sort((a, b) => mostRecentDate(b).localeCompare(mostRecentDate(a)));
+  const pitchers = [...players].filter(p => p.type === 'pitcher')
+    .sort((a, b) => mostRecentDate(b).localeCompare(mostRecentDate(a)));
+
+  let html = '';
+
+  if (pitchers.length) {
+    html += `<div class="section-heading">Pitchers — Recent Outings</div>`;
+    html += `<div class="gamelog-grid">${pitchers.map(p => makeGameLogCard(p, logMap[p.mlb_id])).join('')}</div>`;
+  }
+
+  if (hitters.length) {
+    html += `<div class="section-heading" style="margin-top:2rem">Hitters — Last 7 Games</div>`;
+    html += `<div class="gamelog-grid">${hitters.map(p => makeGameLogCard(p, logMap[p.mlb_id])).join('')}</div>`;
+  }
+
+  container.innerHTML = html;
+}
+
 function switchTab(tab, el) {
   currentTab = tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
-  renderRoster();
+  if (tab === 'gamelogs') {
+    // Hide year bar and sort row — not relevant for game logs
+    document.querySelector('.year-bar').style.display = 'none';
+    document.querySelector('.filter-row').style.display = 'none';
+    document.getElementById('summary-bar').style.display = 'none';
+    renderGameLogs();
+  } else {
+    document.querySelector('.year-bar').style.display = '';
+    document.querySelector('.filter-row').style.display = '';
+    document.getElementById('summary-bar').style.display = '';
+    renderRoster();
+  }
 }
 function openPanel() {
   document.getElementById('panel-overlay').classList.add('open');
