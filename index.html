@@ -1564,10 +1564,13 @@ let rankSortDir = 'asc';
 let rankFilter  = 'all';  // 'all', 'top100', 'top500', 'roster', 'hitter', 'pitcher'
 let rankSearch  = '';
 
+// Columns to fetch — excludes heavy grade columns initially
+const RANK_COLS = 'mlb_id,name,fg_rank,fg_org_rank,fg_fv,eta,risk,current_level,hit_future,game_future,raw_future,spd_future,fld_future,fb_future,sl_future,cb_future,ch_future,cmd_future,hit_present,game_present,raw_present,spd_present,fld_present,fb_present,sl_present,cb_present,ch_present,cmd_present';
+
 async function loadRankings() {
-  if (rankingsCache && Date.now() - rankingsCache.ts < 60 * 60 * 1000) return; // 1hr cache
+  if (rankingsCache && Date.now() - rankingsCache.ts < 60 * 60 * 1000) return;
   try {
-    const url = `${SUPABASE_URL}/rest/v1/prospect_rankings?select=*&order=fg_rank.asc.nullslast&limit=1000`;
+    const url = `${SUPABASE_URL}/rest/v1/prospect_rankings?select=${RANK_COLS}&order=fg_rank.asc.nullslast&limit=600`;
     const r = await fetch(url, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
     });
@@ -1576,6 +1579,7 @@ async function loadRankings() {
     rankingsCache = { ts: Date.now(), prospects: data };
   } catch(e) {
     console.error('loadRankings:', e);
+    rankingsCache = { ts: Date.now(), prospects: [] };
   }
 }
 
@@ -1622,116 +1626,142 @@ function isHitterProspect(p) {
   return !!(p.hit_future || p.hit_present || p.game_future || p.spd_future);
 }
 
-function renderRankingsView() {
-  const container = document.getElementById('roster-container');
+// How many rows to show at once
+const RANK_PAGE_SIZE = 100;
+let rankPage = 0;
+let rankSearchTimer = null;
+let rankFilteredList = [];
 
-  if (!rankingsCache || !rankingsCache.prospects.length) {
-    container.innerHTML = '<div class="no-rank-msg">Loading rankings…</div>';
-    return;
-  }
+function buildRow(p, myIds, isHitterView) {
+  const isOnRoster = myIds.has(p.mlb_id);
+  const myBadge = isOnRoster ? '<span class="my-badge">MINE</span>' : '';
+  const nameCls = isOnRoster ? 'my-player-name' : '';
+  const rowCls  = isOnRoster ? 'my-player' : '';
+  const fv      = p.fg_fv ? `<span class="fv-badge ${fvClass(p.fg_fv)}">${p.fg_fv}</span>` : '—';
+  const risk    = p.risk  ? `<span class="${riskClass(p.risk)}">${p.risk}</span>` : '—';
+  const level   = p.current_level ? `<span style="font-family:'DM Mono',monospace;font-size:.65rem;">${p.current_level}</span>` : '—';
+  const hg = `${gradeCell(p.hit_present,p.hit_future)}${gradeCell(p.game_present,p.game_future)}${gradeCell(p.raw_present,p.raw_future)}${gradeCell(p.spd_present,p.spd_future)}${gradeCell(p.fld_present,p.fld_future)}`;
+  const pg = `${gradeCell(p.fb_present,p.fb_future)}${gradeCell(p.sl_present,p.sl_future)}${gradeCell(p.cb_present,p.cb_future)}${gradeCell(p.ch_present,p.ch_future)}${gradeCell(p.cmd_present,p.cmd_future)}`;
+  return `<tr class="${rowCls}"><td class="rank-num">${p.fg_rank||'—'}</td><td><span class="rank-name ${nameCls}">${esc(p.name||'')}</span>${myBadge}</td><td>${fv}</td><td>${etaDisplay(p.eta)}</td><td>${risk}</td><td>${level}</td>${isHitterView?hg:pg}</tr>`;
+}
 
+function getFilteredSortedList() {
   const myIds = new Set(players.map(p => p.mlb_id));
-  const myNames = new Set(players.map(p => p.name.toLowerCase()));
-  const currentYear = new Date().getFullYear();
-
-  // Filter
-  let list = rankingsCache.prospects.filter(p => {
-    if (rankFilter === 'top100')  return p.fg_rank && p.fg_rank <= 100;
-    if (rankFilter === 'top500')  return p.fg_rank && p.fg_rank <= 500;
+  let list = (rankingsCache?.prospects || []).filter(p => {
+    if (rankFilter === 'top100')  return p.fg_rank <= 100;
+    if (rankFilter === 'top500')  return p.fg_rank <= 500;
     if (rankFilter === 'roster')  return myIds.has(p.mlb_id);
     if (rankFilter === 'hitter')  return isHitterProspect(p);
     if (rankFilter === 'pitcher') return !isHitterProspect(p);
     return true;
   });
-
-  // Search
   if (rankSearch.trim()) {
     const q = rankSearch.trim().toLowerCase();
-    list = list.filter(p => p.name && p.name.toLowerCase().includes(q));
+    list = list.filter(p => p.name?.toLowerCase().includes(q));
   }
-
-  // Sort
   list.sort((a, b) => {
     let av = a[rankSortCol], bv = b[rankSortCol];
-    // Nulls always last
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
-    if (typeof av === 'string') av = av.toLowerCase();
-    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = (bv||'').toLowerCase(); }
     const cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return rankSortDir === 'asc' ? cmp : -cmp;
   });
+  return list;
+}
+
+function renderRankingsRows(list, page) {
+  const myIds = new Set(players.map(p => p.mlb_id));
+  const isHitterView = rankFilter !== 'pitcher';
+  const start = 0;
+  const end   = (page + 1) * RANK_PAGE_SIZE;
+  const slice = list.slice(start, end);
+  return slice.map(p => buildRow(p, myIds, isHitterView)).join('');
+}
+
+function renderRankingsView() {
+  const container = document.getElementById('roster-container');
+  if (!rankingsCache) {
+    container.innerHTML = '<div class="no-rank-msg"><span class="loading-spinner"></span> Loading…</div>';
+    return;
+  }
+  if (!rankingsCache.prospects.length) {
+    container.innerHTML = '<div class="no-rank-msg">No rankings data found. Run update_rankings.py first.</div>';
+    return;
+  }
+
+  rankFilteredList = getFilteredSortedList();
+  rankPage = 0;
+
+  const myIds      = new Set(players.map(p => p.mlb_id));
+  const rosterHits = rankingsCache.prospects.filter(p => myIds.has(p.mlb_id)).length;
+  const isHitterView = rankFilter !== 'pitcher';
+  const updatedStr = new Date(rankingsCache.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 
   function thSort(col, label, title='') {
     const active = rankSortCol === col;
     const arrow  = active ? (rankSortDir === 'asc' ? ' ↑' : ' ↓') : '';
-    return `<th class="${active ? 'sorted' : ''}" onclick="sortRankings('${col}')" title="${title}">${label}${arrow}</th>`;
+    return `<th class="${active?'sorted':''}" onclick="sortRankings('${col}')" title="${title}">${label}${arrow}</th>`;
   }
 
-  const isHitterView = rankFilter === 'pitcher' ? false : true;
   const gradeHeaders = isHitterView
-    ? `${thSort('hit_future','HIT','Hit tool (future)')}${thSort('game_future','PWR','Game power (future)')}${thSort('raw_future','RAW','Raw power (future)')}${thSort('spd_future','SPD','Speed (future)')}${thSort('fld_future','FLD','Fielding (future)')}`
-    : `${thSort('fb_future','FB','Fastball (future)')}${thSort('sl_future','SL','Slider (future)')}${thSort('cb_future','CB','Curveball (future)')}${thSort('ch_future','CH','Changeup (future)')}${thSort('cmd_future','CMD','Command (future)')}`;
+    ? `${thSort('hit_future','HIT')}${thSort('game_future','PWR')}${thSort('raw_future','RAW')}${thSort('spd_future','SPD')}${thSort('fld_future','FLD')}`
+    : `${thSort('fb_future','FB')}${thSort('sl_future','SL')}${thSort('cb_future','CB')}${thSort('ch_future','CH')}${thSort('cmd_future','CMD')}`;
 
-  const rows = list.slice(0, 500).map(p => {
-    const isOnRoster = myIds.has(p.mlb_id);
-    const rowCls = isOnRoster ? 'my-player' : '';
-    const myBadge = isOnRoster ? '<span class="my-badge">MINE</span>' : '';
-    const nameCls = isOnRoster ? 'my-player-name' : '';
-    const fv = p.fg_fv ? `<span class="fv-badge ${fvClass(p.fg_fv)}">${p.fg_fv}</span>` : '—';
-    const risk = p.risk ? `<span class="${riskClass(p.risk)}">${p.risk}</span>` : '—';
-    const level = p.current_level
-      ? `<span style="font-family:'DM Mono',monospace;font-size:.65rem;">${p.current_level}</span>`
-      : '—';
-
-    const hitterGrades = `${gradeCell(p.hit_present,p.hit_future)}${gradeCell(p.game_present,p.game_future)}${gradeCell(p.raw_present,p.raw_future)}${gradeCell(p.spd_present,p.spd_future)}${gradeCell(p.fld_present,p.fld_future)}`;
-    const pitcherGrades = `${gradeCell(p.fb_present,p.fb_future)}${gradeCell(p.sl_present,p.sl_future)}${gradeCell(p.cb_present,p.cb_future)}${gradeCell(p.ch_present,p.ch_future)}${gradeCell(p.cmd_present,p.cmd_future)}`;
-    const grades = isHitterView ? hitterGrades : pitcherGrades;
-
-    return `<tr class="${rowCls}">
-      <td class="rank-num">${p.fg_rank || '—'}</td>
-      <td><span class="rank-name ${nameCls}">${esc(p.name||'')}</span>${myBadge}</td>
-      <td>${fv}</td>
-      <td>${etaDisplay(p.eta)}</td>
-      <td>${risk}</td>
-      <td>${level}</td>
-      ${grades}
-    </tr>`;
-  }).join('');
-
-  const updatedStr = rankingsCache
-    ? new Date(rankingsCache.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
-    : '—';
+  const initialRows = renderRankingsRows(rankFilteredList, 0);
+  const hasMore     = rankFilteredList.length > RANK_PAGE_SIZE;
 
   container.innerHTML = `
     <div class="rankings-controls">
       <button class="rank-filter-chip ${rankFilter==='all'?'active':''}"     onclick="setRankFilter('all')">All (${rankingsCache.prospects.length})</button>
       <button class="rank-filter-chip ${rankFilter==='top100'?'active':''}"  onclick="setRankFilter('top100')">Top 100</button>
       <button class="rank-filter-chip ${rankFilter==='top500'?'active':''}"  onclick="setRankFilter('top500')">Top 500</button>
-      <button class="rank-filter-chip ${rankFilter==='roster'?'active':''}"  onclick="setRankFilter('roster')">My Roster (${[...myIds].filter(id=>rankingsCache.prospects.find(p=>p.mlb_id===id)).length})</button>
+      <button class="rank-filter-chip ${rankFilter==='roster'?'active':''}"  onclick="setRankFilter('roster')">My Roster (${rosterHits})</button>
       <button class="rank-filter-chip ${rankFilter==='hitter'?'active':''}"  onclick="setRankFilter('hitter')">Hitters</button>
       <button class="rank-filter-chip ${rankFilter==='pitcher'?'active':''}" onclick="setRankFilter('pitcher')">Pitchers</button>
-      <input class="rank-search" type="text" placeholder="Search name…"
-        value="${esc(rankSearch)}" oninput="rankSearch=this.value;renderRankingsView()" />
-      <span class="rankings-meta">Source: FanGraphs · Updated ${updatedStr}</span>
+      <input class="rank-search" id="rank-search-input" type="text" placeholder="Search name…"
+        value="${esc(rankSearch)}"
+        oninput="clearTimeout(rankSearchTimer);rankSearchTimer=setTimeout(()=>{rankSearch=this.value;renderRankingsView();},250)" />
+      <span class="rankings-meta">FanGraphs 2026 · ${rankFilteredList.length} prospects · Updated ${updatedStr}</span>
     </div>
     <div class="rankings-table-wrap">
       <table class="rankings-table">
         <thead><tr>
           ${thSort('fg_rank','Rank')}
           ${thSort('name','Name')}
-          ${thSort('fg_fv','FV','Future Value (20-80)')}
-          ${thSort('eta','ETA','Expected MLB debut')}
+          ${thSort('fg_fv','FV')}
+          ${thSort('eta','ETA')}
           ${thSort('risk','Risk')}
           ${thSort('current_level','Level')}
           ${gradeHeaders}
         </tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody id="rank-tbody">${initialRows}</tbody>
       </table>
     </div>
-    ${list.length > 500 ? `<div style="text-align:center;padding:1rem;font-size:.78rem;color:var(--muted);">Showing top 500 of ${list.length} results. Use filters or search to narrow down.</div>` : ''}
-  `;
+    <div id="rank-load-more" style="text-align:center;padding:1rem;display:${hasMore?'block':'none'};">
+      <button class="btn btn-ghost" onclick="loadMoreRankings()" style="font-size:.82rem;">
+        Load more (${rankFilteredList.length - RANK_PAGE_SIZE} remaining)
+      </button>
+    </div>`;
+}
+
+function loadMoreRankings() {
+  rankPage++;
+  const myIds = new Set(players.map(p => p.mlb_id));
+  const isHitterView = rankFilter !== 'pitcher';
+  const start = rankPage * RANK_PAGE_SIZE;
+  const end   = (rankPage + 1) * RANK_PAGE_SIZE;
+  const slice = rankFilteredList.slice(start, end);
+  const newRows = slice.map(p => buildRow(p, myIds, isHitterView)).join('');
+  document.getElementById('rank-tbody').insertAdjacentHTML('beforeend', newRows);
+  const remaining = rankFilteredList.length - end;
+  const btn = document.getElementById('rank-load-more');
+  if (remaining <= 0) {
+    btn.style.display = 'none';
+  } else {
+    btn.querySelector('button').textContent = `Load more (${remaining} remaining)`;
+  }
 }
 
 function setRankFilter(f) {
