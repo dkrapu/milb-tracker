@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiLB Prospect Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #0a0c10;
+  --surface:  #111318;
+  --surface2: #1a1d24;
+  --surface3: #22262f;
+  --border:   rgba(255,255,255,0.07);
+  --border2:  rgba(255,255,255,0.13);
+  --text:     #e8eaf0;
+  --muted:    #6b7280;
+  --accent:   #e8ff47;
+  --accent2:  #47d4ff;
+  --red:      #ff4f4f;
+  --green:    #4fffb0;
+  --amber:    #ffb347;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+
+/* HEADER */
+.header{display:flex;align-items:center;justify-content:space-between;padding:1.25rem 2.5rem;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:100;gap:1rem;flex-wrap:wrap;}
+.logo{display:flex;align-items:baseline;gap:.5rem;}
+.logo-main{font-family:'Bebas Neue',sans-serif;font-size:1.8rem;letter-spacing:.05em;color:var(--accent);line-height:1;}
+.logo-sub{font-family:'DM Mono',monospace;font-size:.7rem;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;}
+.header-actions{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;}
+.last-updated{font-family:'DM Mono',monospace;font-size:.68rem;color:var(--muted);}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 15px;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:500;cursor:pointer;transition:all .15s;border:none;}
+.btn-primary{background:var(--accent);color:#0a0c10;}
+.btn-primary:hover{background:#d4eb30;}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border2);}
+.btn-ghost:hover{color:var(--text);background:var(--surface2);}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+
+/* YEAR SELECTOR */
+.year-bar{display:flex;align-items:center;gap:6px;padding:.75rem 2.5rem;border-bottom:1px solid var(--border);background:var(--surface);overflow-x:auto;}
+.year-label{font-family:'DM Mono',monospace;font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;margin-right:4px;}
+.year-chip{padding:4px 14px;border-radius:100px;font-family:'DM Mono',monospace;font-size:.75rem;font-weight:500;cursor:pointer;border:1px solid var(--border2);background:transparent;color:var(--muted);transition:all .15s;white-space:nowrap;}
+.year-chip:hover{color:var(--text);border-color:rgba(255,255,255,.25);}
+.year-chip.active{background:var(--accent);color:#0a0c10;border-color:var(--accent);}
+
+/* TABS */
+.tabs{display:flex;gap:0;padding:0 2.5rem;border-bottom:1px solid var(--border);background:var(--surface);}
+.tab{padding:.85rem 1.1rem;font-size:.82rem;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* MAIN */
+.main{padding:1.75rem 2.5rem;max-width:1700px;margin:0 auto;}
+
+/* SUMMARY BAR */
+.summary-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:1.75rem;}
+.summary-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.9rem 1.1rem;}
+.summary-label{font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;}
+.summary-value{font-family:'Bebas Neue',sans-serif;font-size:1.9rem;line-height:1;color:var(--text);}
+.summary-value.accent{color:var(--accent);}
+.summary-value.green{color:var(--green);}
+.summary-value.amber{color:var(--amber);}
+.summary-sub{font-size:.62rem;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace;}
+
+/* FILTER ROW */
+.filter-row{display:flex;align-items:center;gap:8px;margin-bottom:1.25rem;flex-wrap:wrap;}
+.sort-label{font-size:.75rem;color:var(--muted);white-space:nowrap;}
+.sort-select{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:.78rem;padding:5px 10px;cursor:pointer;}
+
+/* PLAYER GRID */
+.section-heading{font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:.1em;color:var(--muted);margin-bottom:.75rem;margin-top:1.5rem;display:flex;align-items:center;gap:8px;}
+.section-heading::after{content:'';flex:1;height:1px;background:var(--border);}
+.player-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;}
+
+/* PLAYER CARD */
+.player-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;transition:border-color .15s,transform .15s;position:relative;overflow:hidden;}
+.player-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);opacity:0;transition:opacity .15s;}
+.player-card:hover{border-color:var(--border2);transform:translateY(-1px);}
+.player-card:hover::before{opacity:1;}
+.player-card.no-stats{opacity:.5;}
+.player-card.pitcher::before{background:var(--accent2);}
+
+.card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
+.card-name{font-weight:600;font-size:.95rem;color:var(--text);line-height:1.2;}
+.card-meta{display:flex;align-items:center;gap:5px;margin-top:4px;flex-wrap:wrap;}
+
+.badge{font-family:'DM Mono',monospace;font-size:.6rem;padding:2px 6px;border-radius:4px;border:1px solid transparent;letter-spacing:.04em;}
+.badge-pos{background:#1a2a40;border-color:#1e4080;color:#7eb8f7;}
+.badge-level{background:#1a2e1a;border-color:#1a5c1a;color:#6bdb6b;}
+.badge-team{background:#2a1f1f;border-color:#5c2020;color:#e87b7b;}
+.badge-year{background:#2a2010;border-color:#5c4010;color:#f0c060;}
+
+.card-remove{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 4px;border-radius:4px;font-size:1rem;line-height:1;transition:all .15s;flex-shrink:0;}
+.card-remove:hover{color:var(--red);background:rgba(255,79,79,.1);}
+
+/* SPLITS TABLE */
+.splits-wrap{margin-top:8px;}
+.splits-toggle{font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin-bottom:6px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;transition:all .15s;}
+.splits-toggle:hover{color:var(--text);border-color:var(--border2);}
+.splits-toggle .arrow{transition:transform .15s;display:inline-block;}
+.splits-toggle.open .arrow{transform:rotate(90deg);}
+
+.splits-table{width:100%;border-collapse:collapse;font-family:'DM Mono',monospace;font-size:.7rem;}
+.splits-table th{color:var(--muted);font-weight:500;padding:4px 5px;text-align:right;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.05em;font-size:.58rem;}
+.splits-table th:first-child{text-align:left;}
+.splits-table td{padding:4px 5px;text-align:right;border-bottom:1px solid var(--border);color:var(--text);}
+.splits-table td:first-child{text-align:left;color:var(--muted);}
+.splits-table tr.total-row td{color:var(--accent);font-weight:500;border-top:1px solid var(--border2);border-bottom:none;}
+.splits-table tr.total-row td:first-child{color:var(--accent);}
+.splits-table .hot{color:var(--accent);}
+.splits-table .good{color:var(--green);}
+.splits-table .bad{color:var(--red);}
+
+/* quick stats (collapsed view) */
+.quick-stats{display:grid;gap:4px;}
+.quick-stats.hitter{grid-template-columns:repeat(8,1fr);}
+.quick-stats.pitcher{grid-template-columns:repeat(7,1fr);}
+.stat-cell{background:var(--surface2);border-radius:5px;padding:5px 2px;text-align:center;}
+.stat-lbl{font-family:'DM Mono',monospace;font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;}
+.stat-val{font-family:'DM Mono',monospace;font-size:.78rem;font-weight:500;color:var(--text);}
+.stat-val.hot{color:var(--accent);}
+.stat-val.good{color:var(--green);}
+.no-stats-msg{font-size:.75rem;color:var(--muted);font-style:italic;margin-top:4px;}
+
+/* PANEL */
+.panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:center;justify-content:center;padding:2rem;backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .2s;}
+.panel-overlay.open{opacity:1;pointer-events:all;}
+.panel{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:2rem;width:100%;max-width:560px;transform:translateY(20px);transition:transform .2s;}
+.panel-overlay.open .panel{transform:translateY(0);}
+.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;}
+.panel-title{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:.05em;color:var(--accent);}
+.panel-close{background:transparent;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer;padding:4px;border-radius:6px;transition:all .15s;line-height:1;}
+.panel-close:hover{color:var(--text);background:var(--surface2);}
+.type-row{display:flex;gap:8px;margin-bottom:1.25rem;}
+.type-btn{flex:1;padding:8px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:500;cursor:pointer;transition:all .15s;}
+.type-btn.hitter.selected{border-color:var(--accent);color:var(--accent);background:rgba(232,255,71,.07);}
+.type-btn.pitcher.selected{border-color:var(--accent2);color:var(--accent2);background:rgba(71,212,255,.07);}
+.search-row{display:flex;gap:8px;margin-bottom:1rem;}
+.search-input{flex:1;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:.9rem;padding:10px 14px;outline:none;transition:border-color .15s;}
+.search-input:focus{border-color:var(--accent);}
+.search-input::placeholder{color:var(--muted);}
+.search-btn{background:var(--accent);color:#0a0c10;border:none;border-radius:8px;padding:10px 18px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:.85rem;cursor:pointer;transition:background .15s;white-space:nowrap;}
+.search-btn:hover{background:#d4eb30;}
+.search-btn:disabled{opacity:.5;cursor:not-allowed;}
+.search-results{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;}
+.result-item{display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;cursor:pointer;transition:all .15s;}
+.result-item:hover{border-color:var(--border2);background:var(--surface3);}
+.result-item.already-added{opacity:.4;pointer-events:none;}
+.result-name{font-weight:500;font-size:.9rem;}
+.result-meta{font-size:.75rem;color:var(--muted);margin-top:2px;}
+.result-add{background:var(--accent);color:#0a0c10;border:none;border-radius:5px;padding:5px 12px;font-weight:600;font-size:.75rem;cursor:pointer;transition:background .15s;white-space:nowrap;}
+.result-add:hover{background:#d4eb30;}
+.search-status{font-size:.8rem;color:var(--muted);text-align:center;padding:1rem;font-style:italic;}
+.manual-section{margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--border);}
+.manual-label{font-size:.7rem;color:var(--muted);margin-bottom:8px;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.1em;}
+.manual-row{display:grid;grid-template-columns:1fr 100px 60px 60px;gap:6px;}
+.manual-input{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:.82rem;padding:8px 10px;outline:none;transition:border-color .15s;width:100%;}
+.manual-input:focus{border-color:var(--accent);}
+.manual-input::placeholder{color:var(--muted);font-size:.72rem;}
+.manual-add-btn{background:var(--surface3);color:var(--text);border:1px solid var(--border2);border-radius:6px;padding:8px 12px;font-size:.82rem;font-weight:500;cursor:pointer;transition:all .15s;width:100%;}
+.manual-add-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* MISC */
+.loading-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.refresh-icon{display:inline-block;transition:transform .3s;}
+.refreshing .refresh-icon{animation:spin .6s linear infinite;}
+.empty-state{text-align:center;padding:4rem 2rem;color:var(--muted);}
+.empty-icon{font-size:3rem;margin-bottom:1rem;opacity:.4;}
+.empty-title{font-family:'Bebas Neue',sans-serif;font-size:1.5rem;color:var(--text);margin-bottom:.5rem;letter-spacing:.05em;}
+.empty-desc{font-size:.85rem;}
+.toast{position:fixed;bottom:2rem;right:2rem;background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:12px 18px;font-size:.85rem;z-index:999;transform:translateY(100px);opacity:0;transition:all .25s;max-width:320px;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.success{border-color:var(--green);color:var(--green);}
+.toast.error{border-color:var(--red);color:var(--red);}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="logo">
+    <span class="logo-main">MiLB Tracker</span>
+    <span class="logo-sub" id="season-label">2026 Season</span>
+  </div>
+  <div class="header-actions">
+    <span class="last-updated" id="last-updated">—</span>
+    <button class="btn btn-ghost" id="refresh-btn" onclick="refreshAllStats()">
+      <span class="refresh-icon">↻</span> Refresh
+    </button>
+    <button class="btn btn-primary" onclick="openPanel()">+ Add Player</button>
+  </div>
+</header>
+
+<!-- YEAR SELECTOR -->
+<div class="year-bar">
+  <span class="year-label">Season</span>
+  <div id="year-chips"></div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('all',this)">All</div>
+  <div class="tab" onclick="switchTab('hitters',this)">Hitters</div>
+  <div class="tab" onclick="switchTab('pitchers',this)">Pitchers</div>
+  <div class="tab" onclick="switchTab('active',this)">Has Stats</div>
+  <div class="tab" onclick="switchTab('nostats',this)">No Stats Yet</div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="summary-bar" id="summary-bar"></div>
+  <div class="filter-row">
+    <span class="sort-label">Sort by</span>
+    <select class="sort-select" onchange="renderRoster()" id="sort-select">
+      <option value="name">Name</option>
+      <option value="level">Level</option>
+      <option value="pa">PA (hitters)</option>
+      <option value="avg">AVG (hitters)</option>
+      <option value="hr">HR (hitters)</option>
+      <option value="sb">SB (hitters)</option>
+      <option value="ip">IP (pitchers)</option>
+      <option value="era">ERA (pitchers)</option>
+      <option value="so">K (pitchers)</option>
+      <option value="ops">OPS (hitters)</option>
+      <option value="iso">ISO (hitters)</option>
+    </select>
+  </div>
+  <div id="roster-container"></div>
+</div>
+
+<!-- ADD PLAYER PANEL -->
+<div class="panel-overlay" id="panel-overlay" onclick="handleOverlayClick(event)">
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Add Prospect</span>
+      <button class="panel-close" onclick="closePanel()">✕</button>
+    </div>
+    <div class="type-row">
+      <button class="type-btn hitter selected" id="type-hitter" onclick="setType('hitter')">Hitter</button>
+      <button class="type-btn pitcher" id="type-pitcher" onclick="setType('pitcher')">Pitcher</button>
+    </div>
+    <div class="search-row">
+      <input class="search-input" id="search-input" type="text" placeholder="Search player name..."
+        onkeydown="if(event.key==='Enter') searchPlayer()" />
+      <button class="search-btn" id="search-btn" onclick="searchPlayer()">Search</button>
+    </div>
+    <div class="search-results" id="search-results">
+      <div class="search-status">Search for a player above to add them to your roster</div>
+    </div>
+    <div class="manual-section">
+      <div class="manual-label">Or add manually by MLB ID</div>
+      <div class="manual-row">
+        <input class="manual-input" id="manual-name" placeholder="Full Name" />
+        <input class="manual-input" id="manual-id"   placeholder="MLB ID" type="number" />
+        <input class="manual-input" id="manual-pos"  placeholder="POS" />
+        <button class="manual-add-btn" onclick="addManual()">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const MLB_API   = 'https://statsapi.mlb.com/api/v1';
+const SPORT_IDS = [1, 11, 12, 13, 14, 16, 17];
+const SPORT_LABELS = {1:'MLB', 11:'AAA', 12:'AA', 13:'A+', 14:'A', 16:'Rk', 17:'DSL'};
+const ALL_YEARS = ['2026','2025','2024','2023'];
+const ALL_YEARS_KEY = 'all';
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let players       = [];
+let statsCache    = {};   // key: `${mlb_id}_${year}` -> { splits:[], totals:{} }
+let playerBios    = {};   // key: mlb_id -> { birthDate, currentAge, fullName }
+let currentTab    = 'all';
+let currentYear   = '2026';
+let addType       = 'hitter';
+let isRefreshing  = false;
+let expandedCards = new Set(); // mlb_ids with splits expanded
+let expandedYears = new Set(); // mlb_ids with year drill-down open in "all years" view
+
+// ── PERSISTENCE ───────────────────────────────────────────────────────────────
+function saveRoster() {
+  localStorage.setItem('milb_roster_v2', JSON.stringify(players));
+}
+
+function loadRoster() {
+  const saved = localStorage.getItem('milb_roster_v2');
+  if (saved) {
+    try { players = JSON.parse(saved); return; } catch(e) {}
+  }
+  players = [
+    {name:"Termarr Johnson",    mlb_id:702261,  pos:"2B",  org:"PIT", type:"hitter"},
+    {name:"Walker Jenkins",     mlb_id:805805,  pos:"OF",  org:"MIN", type:"hitter"},
+    {name:"George Lombard Jr.", mlb_id:806146,  pos:"SS",  org:"NYY", type:"hitter"},
+    {name:"Luis Lara",          mlb_id:800325,  pos:"OF",  org:"MIL", type:"hitter"},
+    {name:"Sammy Stafura",      mlb_id:806230,  pos:"SS",  org:"PIT", type:"hitter"},
+    {name:"Chris Arroyo",       mlb_id:701360,  pos:"1B",  org:"MIA", type:"hitter"},
+    {name:"Dorian Soto",        mlb_id:829039,  pos:"SS",  org:"BOS", type:"hitter"},
+    {name:"Joendry Vargas",     mlb_id:806959,  pos:"SS",  org:"LAD", type:"hitter"},
+    {name:"Brandon Compton",    mlb_id:703680,  pos:"OF",  org:"MIA", type:"hitter"},
+    {name:"Derniche Valdez",    mlb_id:806961,  pos:"OF",  org:"CHC", type:"hitter"},
+    {name:"Emanuel Luna",       mlb_id:836587,  pos:"OF",  org:"STL", type:"hitter"},
+    {name:"Carlos Lagrange",    mlb_id:801739,  pos:"SP",  org:"NYY", type:"pitcher"},
+    {name:"Tanner Franklin",    mlb_id:815119,  pos:"SP",  org:"STL", type:"pitcher"},
+    {name:"Anderson Brito",     mlb_id:820901,  pos:"SP",  org:"TB",  type:"pitcher"},
+    {name:"Hyun-Seok Jang",     mlb_id:815794,  pos:"SP",  org:"LAD", type:"pitcher"},
+    {name:"David Shields",      mlb_id:815789,  pos:"SP",  org:"KC",  type:"pitcher"},
+    {name:"Jose Urbina",        mlb_id:808250,  pos:"SP",  org:"TB",  type:"pitcher"},
+    {name:"Steven Echavarria",  mlb_id:806064,  pos:"SP",  org:"ATH", type:"pitcher"},
+  ];
+  saveRoster();
+}
+
+function cacheKey(mlb_id, year) { return `${mlb_id}_${year}`; }
+
+function saveStatsCache() {
+  localStorage.setItem('milb_stats_v2', JSON.stringify({ ts: Date.now(), data: statsCache }));
+}
+
+function saveBios() {
+  localStorage.setItem('milb_bios_v2', JSON.stringify(playerBios));
+}
+
+function loadStatsCache() {
+  const saved = localStorage.getItem('milb_stats_v2');
+  if (!saved) return;
+  try {
+    const obj = JSON.parse(saved);
+    if (Date.now() - obj.ts < 3 * 60 * 60 * 1000) {
+      statsCache = obj.data || {};
+      const d = new Date(obj.ts);
+      document.getElementById('last-updated').textContent =
+        'Updated ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    }
+  } catch(e) {}
+}
+
+function loadBios() {
+  const saved = localStorage.getItem('milb_bios_v2');
+  if (saved) { try { playerBios = JSON.parse(saved); } catch(e) {} }
+}
+
+async function fetchBio(mlb_id) {
+  if (playerBios[mlb_id]) return;
+  try {
+    const r = await fetch(`${MLB_API}/people/${mlb_id}?hydrate=currentTeam`);
+    const d = await r.json();
+    const p = d.people?.[0];
+    if (p) {
+      playerBios[mlb_id] = {
+        birthDate:   p.birthDate   || null,
+        currentAge:  p.currentAge  || null,
+        fullName:    p.fullName    || null,
+      };
+      saveBios();
+    }
+  } catch(e) {}
+}
+
+// ── MLB STATS API ─────────────────────────────────────────────────────────────
+async function fetchRawSplits(mlb_id, group, year) {
+  const all = [];
+
+  // Fetch MiLB levels (sportIds 11-17) in parallel
+  const milbIds = [11, 12, 13, 14, 16, 17];
+  await Promise.all(milbIds.map(async sportId => {
+    try {
+      const url = `${MLB_API}/people/${mlb_id}/stats?stats=season&season=${year}&group=${group}&sportId=${sportId}`;
+      const r = await fetch(url);
+      if (!r.ok) return;
+      const d = await r.json();
+      for (const block of (d.stats || [])) {
+        for (const split of (block.splits || [])) {
+          split._sportId = sportId;
+          all.push(split);
+        }
+      }
+    } catch(e) {}
+  }));
+
+  // Fetch MLB (sportId=1) separately — uses same endpoint but returns different structure
+  try {
+    const url = `${MLB_API}/people/${mlb_id}/stats?stats=season&season=${year}&group=${group}&sportId=1`;
+    const r = await fetch(url);
+    if (r.ok) {
+      const d = await r.json();
+      for (const block of (d.stats || [])) {
+        for (const split of (block.splits || [])) {
+          split._sportId = 1;
+          all.push(split);
+        }
+      }
+    }
+  } catch(e) {}
+
+  return all;
+}
+
+// Group raw splits by team+level, combine stats within each group
+function groupSplitsByLevel(rawSplits, type) {
+  // Each raw split is one season at one team/level
+  // (the API already returns one entry per team per sportId)
+  const groups = [];
+  for (const s of rawSplits) {
+    const teamName  = s.team?.name || 'Unknown';
+    const sportId   = s._sportId;
+    const levelAbbr = SPORT_LABELS[sportId] || '?';
+    if (type === 'hitter') {
+      const st = s.stat || {};
+      groups.push({
+        team: teamName, level: levelAbbr, sportId,
+        g:   st.gamesPlayed      || 0,
+        pa:  st.plateAppearances || 0,
+        ab:  st.atBats           || 0,
+        r:   st.runs             || 0,
+        h:   st.hits             || 0,
+        d:   st.doubles          || 0,
+        t:   st.triples          || 0,
+        hr:  st.homeRuns         || 0,
+        rbi: st.rbi              || 0,
+        sb:  st.stolenBases      || 0,
+        bb:  st.baseOnBalls      || 0,
+        so:  st.strikeOuts       || 0,
+      });
+    } else {
+      const st = s.stat || {};
+      const raw  = parseFloat(st.inningsPitched || 0);
+      const full = Math.floor(raw);
+      const frac = Math.round((raw - full) * 10);
+      groups.push({
+        team: teamName, level: levelAbbr, sportId,
+        g:      st.gamesPlayed  || 0,
+        gs:     st.gamesStarted || 0,
+        w:      st.wins         || 0,
+        l:      st.losses       || 0,
+        sv:     st.saves        || 0,
+        ipOuts: full * 3 + frac,
+        hits:   st.hits         || 0,
+        er:     st.earnedRuns   || 0,
+        bb:     st.baseOnBalls  || 0,
+        so:     st.strikeOuts   || 0,
+      });
+    }
+  }
+  // Sort by level (MLB first, then AAA down)
+  const order = {1:0, 11:1, 12:2, 13:3, 14:4, 16:5, 17:6};
+  groups.sort((a,b) => (order[a.sportId]||9) - (order[b.sportId]||9));
+  return groups;
+}
+
+function calcHitterDerived(t) {
+  t.avg = t.ab ? (t.h/t.ab).toFixed(3).replace(/^0/,'') : '.000';
+  t.obp = t.pa ? ((t.h+t.bb)/t.pa).toFixed(3).replace(/^0/,'') : '.000';
+  const tb = (t.h - (t.d||0) - (t.t||0) - (t.hr||0)) + (t.d||0)*2 + (t.t||0)*3 + (t.hr||0)*4;
+  t.slg = t.ab ? (tb/t.ab).toFixed(3).replace(/^0/,'') : '.000';
+  const obpF = parseFloat('0'+t.obp)||0;
+  const slgF = parseFloat('0'+t.slg)||0;
+  t.ops = (obpF+slgF).toFixed(3).replace(/^0/,'');
+  const avgF = parseFloat('0'+t.avg)||0;
+  t.iso = Math.max(0, slgF-avgF).toFixed(3).replace(/^0/,'');
+  return t;
+}
+
+function sumHitterGroups(groups) {
+  const t = {g:0,pa:0,ab:0,r:0,h:0,d:0,t:0,hr:0,rbi:0,sb:0,bb:0,so:0};
+  for (const g of groups) {
+    t.g+=g.g; t.pa+=g.pa; t.ab+=g.ab; t.r+=g.r; t.h+=g.h;
+    t.d+=g.d||0; t.t+=g.t||0;
+    t.hr+=g.hr; t.rbi+=g.rbi; t.sb+=g.sb; t.bb+=g.bb; t.so+=g.so;
+  }
+  return calcHitterDerived(t);
+}
+
+function sumPitcherGroups(groups) {
+  const t = {g:0,gs:0,w:0,l:0,sv:0,ipOuts:0,hits:0,er:0,bb:0,so:0};
+  for (const g of groups) {
+    t.g+=g.g; t.gs+=g.gs; t.w+=g.w; t.l+=g.l; t.sv+=g.sv;
+    t.ipOuts+=g.ipOuts; t.hits+=g.hits; t.er+=g.er; t.bb+=g.bb; t.so+=g.so;
+  }
+  const outs = t.ipOuts;
+  t.ip   = `${Math.floor(outs/3)}.${outs%3}`;
+  t.era  = outs ? ((t.er*27)/outs).toFixed(2) : '—';
+  t.whip = outs ? (((t.hits+t.bb)*3)/outs).toFixed(2) : '—';
+  t.k9   = outs ? ((t.so*27)/outs).toFixed(1) : '—';
+  t.wl   = `${t.w}-${t.l}`;
+  return t;
+}
+
+function addHitterDerived(row) {
+  return calcHitterDerived(row);
+}
+
+function addPitcherDerived(row) {
+  const outs = row.ipOuts;
+  row.ip   = `${Math.floor(outs/3)}.${outs%3}`;
+  row.era  = outs ? ((row.er*27)/outs).toFixed(2) : '—';
+  row.whip = outs ? (((row.hits+row.bb)*3)/outs).toFixed(2) : '—';
+  return row;
+}
+
+// Compute combined totals across all years for a player
+function getAllYearsTotals(p) {
+  const allSplits = []; // flat list of {year, level, team, sportId, ...stats}
+  for (const year of ALL_YEARS) {
+    const cached = statsCache[cacheKey(p.mlb_id, year)];
+    if (!cached?.splits?.length) continue;
+    for (const split of cached.splits) {
+      allSplits.push({ ...split, year });
+    }
+  }
+  if (allSplits.length === 0) return null;
+
+  if (p.type === 'hitter') {
+    const totals = allSplits.reduce((t, s) => {
+      t.g+=s.g; t.pa+=s.pa; t.ab+=s.ab; t.r+=s.r; t.h+=s.h;
+      t.d+=(s.d||0); t.t+=(s.t||0); t.hr+=s.hr; t.rbi+=s.rbi;
+      t.sb+=s.sb; t.bb+=s.bb; t.so+=s.so;
+      return t;
+    }, {g:0,pa:0,ab:0,r:0,h:0,d:0,t:0,hr:0,rbi:0,sb:0,bb:0,so:0});
+    return calcHitterDerived(totals);
+  } else {
+    const totals = allSplits.reduce((t, s) => {
+      t.g+=s.g; t.gs+=s.gs; t.w+=s.w; t.l+=s.l; t.sv+=s.sv;
+      t.ipOuts+=s.ipOuts; t.hits+=s.hits; t.er+=s.er; t.bb+=s.bb; t.so+=s.so;
+      return t;
+    }, {g:0,gs:0,w:0,l:0,sv:0,ipOuts:0,hits:0,er:0,bb:0,so:0});
+    const outs = totals.ipOuts;
+    totals.ip   = `${Math.floor(outs/3)}.${outs%3}`;
+    totals.era  = outs ? ((totals.er*27)/outs).toFixed(2) : '—';
+    totals.whip = outs ? (((totals.hits+totals.bb)*3)/outs).toFixed(2) : '—';
+    totals.k9   = outs ? ((totals.so*27)/outs).toFixed(1) : '—';
+    totals.wl   = `${totals.w}-${totals.l}`;
+    return totals;
+  }
+}
+
+async function loadPlayerYear(p, year) {
+  const key = cacheKey(p.mlb_id, year);
+  if (statsCache[key]) return; // already cached
+
+  const group = p.type === 'pitcher' ? 'pitching' : 'hitting';
+  const raw   = await fetchRawSplits(p.mlb_id, group, year);
+
+  if (raw.length === 0) {
+    statsCache[key] = { splits: [], totals: null };
+    return;
+  }
+
+  const splits = groupSplitsByLevel(raw, p.type);
+  splits.forEach(s => p.type === 'hitter' ? addHitterDerived(s) : addPitcherDerived(s));
+  const totals = p.type === 'hitter' ? sumHitterGroups(splits) : sumPitcherGroups(splits);
+
+  // Determine top-level team/level for display
+  if (splits.length > 0) {
+    totals.topTeam  = splits[0].team;
+    totals.topLevel = splits[0].level;
+    totals.allLevels = splits.map(s => s.level).join(' / ');
+    totals.allTeams  = splits.map(s => s.team).join(' / ');
+  }
+
+  statsCache[key] = { splits, totals };
+}
+
+async function refreshAllStats() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('refreshing');
+  btn.disabled = true;
+
+  // Clear cache for current year so we force fresh data
+  for (const p of players) {
+    delete statsCache[cacheKey(p.mlb_id, currentYear)];
+  }
+
+  await Promise.all(players.map(p => loadPlayerYear(p, currentYear)));
+  saveStatsCache();
+
+  const now = new Date();
+  document.getElementById('last-updated').textContent =
+    'Updated ' + now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+
+  btn.classList.remove('refreshing');
+  btn.disabled = false;
+  isRefreshing = false;
+  renderRoster();
+  renderSummary();
+  toast('Stats refreshed!', 'success');
+}
+
+// ── RENDER HELPERS ────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function fmtAvg(v) { return String(v||'.000'); }
+
+function getAge(mlb_id) {
+  const bio = playerBios[mlb_id];
+  if (!bio) return null;
+  if (bio.currentAge) return bio.currentAge;
+  if (bio.birthDate) {
+    const birth = new Date(bio.birthDate);
+    const now   = new Date();
+    let age = now.getFullYear() - birth.getFullYear();
+    const m = now.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+    return age;
+  }
+  return null;
+}
+
+function hitterSplitRow(row, isTotal) {
+  const avgFloat = parseFloat('0'+(row.avg||'.000'))||0;
+  const opsFloat = parseFloat('0'+(row.ops||'.000'))||0;
+  const isoFloat = parseFloat('0'+(row.iso||'.000'))||0;
+  const cls = isTotal ? 'total-row' : '';
+  const label = isTotal ? 'TOTAL' : `${row.level} — ${row.team}`;
+  return `<tr class="${cls}">
+    <td>${esc(label)}</td>
+    <td>${row.g}</td>
+    <td>${row.pa}</td>
+    <td>${row.ab}</td>
+    <td>${row.h}</td>
+    <td>${row.hr}</td>
+    <td>${row.rbi}</td>
+    <td>${row.sb}</td>
+    <td>${row.bb}</td>
+    <td>${row.so}</td>
+    <td class="${avgFloat>=.300?'good':avgFloat>=.250?'':'bad'}">${fmtAvg(row.avg)}</td>
+    <td>${fmtAvg(row.obp)}</td>
+    <td class="${opsFloat>=.850?'good':opsFloat>=.700?'':opsFloat<.600?'bad':''}">${fmtAvg(row.ops)}</td>
+    <td class="${isoFloat>=.200?'good':''}">${fmtAvg(row.iso)}</td>
+  </tr>`;
+}
+
+function pitcherSplitRow(row, isTotal) {
+  const eraVal = parseFloat(row.era)||99;
+  const cls = isTotal ? 'total-row' : '';
+  const label = isTotal ? 'TOTAL' : `${row.level} — ${row.team}`;
+  const k9Val = row.ipOuts ? ((row.so*27)/row.ipOuts).toFixed(1) : (row.k9||'—');
+  return `<tr class="${cls}">
+    <td>${esc(label)}</td>
+    <td>${row.g}</td>
+    <td>${row.ip||'0.0'}</td>
+    <td>${row.w}-${row.l}</td>
+    <td class="${eraVal<3.0?'good':eraVal>5.0?'bad':''}">${row.era||'—'}</td>
+    <td>${row.whip||'—'}</td>
+    <td>${row.so}</td>
+    <td>${row.bb}</td>
+    <td class="${parseFloat(k9Val)>=10?'good':''}">${k9Val}</td>
+  </tr>`;
+}
+
+function makeHitterSplitsTable(splits, totals) {
+  const header = `<tr>
+    <th>Level / Team</th><th>G</th><th>PA</th><th>AB</th><th>H</th>
+    <th>HR</th><th>RBI</th><th>SB</th><th>BB</th><th>SO</th>
+    <th>AVG</th><th>OBP</th><th>OPS</th><th>ISO</th>
+  </tr>`;
+  const rows = splits.map(r => hitterSplitRow(r, false)).join('');
+  const totalRow = splits.length > 1 ? hitterSplitRow(totals, true) : '';
+  return `<table class="splits-table"><thead>${header}</thead><tbody>${rows}${totalRow}</tbody></table>`;
+}
+
+function makePitcherSplitsTable(splits, totals) {
+  const header = `<tr>
+    <th>Level / Team</th><th>G</th><th>IP</th><th>W-L</th>
+    <th>ERA</th><th>WHIP</th><th>K</th><th>BB</th><th>K/9</th>
+  </tr>`;
+  const rows = splits.map(r => pitcherSplitRow(r, false)).join('');
+  const totalRow = splits.length > 1 ? pitcherSplitRow(totals, true) : '';
+  return `<table class="splits-table"><thead>${header}</thead><tbody>${rows}${totalRow}</tbody></table>`;
+}
+
+function statCell(label, value, cls='') {
+  return `<div class="stat-cell"><div class="stat-lbl">${label}</div><div class="stat-val ${cls}">${value}</div></div>`;
+}
+
+function makeCard(p) {
+  const isAllYears = currentYear === ALL_YEARS_KEY;
+
+  // For single year view
+  const key    = cacheKey(p.mlb_id, currentYear);
+  const cached = isAllYears ? null : statsCache[key];
+  const splits = isAllYears ? [] : (cached?.splits || []);
+
+  // Totals — either single year or all-years rollup
+  const totals = isAllYears
+    ? getAllYearsTotals(p)
+    : (cached?.totals || null);
+
+  const hasStats = totals && (
+    (p.type === 'hitter'  && totals.pa     > 0) ||
+    (p.type === 'pitcher' && totals.ipOuts > 0)
+  );
+  const isExpanded      = expandedCards.has(p.mlb_id);
+  const isYearsExpanded = expandedYears.has(p.mlb_id);
+
+  // Age badge
+  const age = getAge(p.mlb_id);
+  const ageBadge = age
+    ? `<span class="badge" style="background:#1f1a2e;border-color:#4a3a7a;color:#b09ae0;">Age ${age}</span>`
+    : '';
+
+  // Quick stat row
+  let quickHtml = '';
+  if (hasStats) {
+    if (p.type === 'hitter') {
+      const avgFloat = parseFloat('0'+(totals.avg||'.000'))||0;
+      const opsFloat = parseFloat('0'+(totals.ops||'.000'))||0;
+      const isoFloat = parseFloat('0'+(totals.iso||'.000'))||0;
+      quickHtml = `<div class="quick-stats hitter">
+        ${statCell('PA',  totals.pa)}
+        ${statCell('HR',  totals.hr,  totals.hr>=5?'hot':'')}
+        ${statCell('RBI', totals.rbi)}
+        ${statCell('SB',  totals.sb,  totals.sb>=5?'hot':'')}
+        ${statCell('AVG', fmtAvg(totals.avg), avgFloat>=.280?'good':'')}
+        ${statCell('OBP', fmtAvg(totals.obp))}
+        ${statCell('OPS', fmtAvg(totals.ops), opsFloat>=.850?'good':opsFloat<.600?'hot':'')}
+        ${statCell('ISO', fmtAvg(totals.iso), isoFloat>=.200?'good':'')}
+      </div>`;
+    } else {
+      const eraFloat = parseFloat(totals.era)||99;
+      quickHtml = `<div class="quick-stats pitcher">
+        ${statCell('G',    totals.g)}
+        ${statCell('W-L',  totals.wl)}
+        ${statCell('IP',   totals.ip)}
+        ${statCell('ERA',  totals.era,  eraFloat<3.5?'good':eraFloat>5?'hot':'')}
+        ${statCell('K',    totals.so,   totals.so>=20?'good':'')}
+        ${statCell('BB',   totals.bb)}
+        ${statCell('WHIP', totals.whip)}
+      </div>`;
+    }
+  } else {
+    const msg = isAllYears ? 'No stats found across any tracked year' : `No ${currentYear} stats yet`;
+    quickHtml = `<div class="no-stats-msg">${msg}</div>`;
+  }
+
+  // ── SPLITS / DRILL-DOWN SECTION ──────────────────────────────────────────
+  let splitsHtml = '';
+
+  if (isAllYears && hasStats) {
+    // All-years view: show year-by-year drill-down
+    const yearsWithData = ALL_YEARS.filter(y => {
+      const t = statsCache[cacheKey(p.mlb_id, y)]?.totals;
+      return t && (t.pa > 0 || t.ipOuts > 0);
+    });
+
+    if (yearsWithData.length > 0) {
+      const drillRows = yearsWithData.map(y => {
+        const yt = statsCache[cacheKey(p.mlb_id, y)]?.totals;
+        const ys = statsCache[cacheKey(p.mlb_id, y)]?.splits || [];
+        const levelStr = ys.map(s=>s.level).join(' / ') || '—';
+        const expandId = `yr-${p.mlb_id}-${y}`;
+        const isYrOpen = expandedCards.has(expandId);
+
+        // Year summary row
+        let yearSummary = '';
+        if (p.type === 'hitter') {
+          const af = parseFloat('0'+(yt.avg||'.000'))||0;
+          const of2 = parseFloat('0'+(yt.ops||'.000'))||0;
+          yearSummary = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+            ${miniStat('PA', yt.pa)} ${miniStat('HR', yt.hr)}
+            ${miniStat('SB', yt.sb)} ${miniStat('AVG', fmtAvg(yt.avg), af>=.280?'good':'')}
+            ${miniStat('OPS', fmtAvg(yt.ops), of2>=.850?'good':of2<.600?'hot':'')}
+            ${miniStat('ISO', fmtAvg(yt.iso))}
+          </div>`;
+        } else {
+          const ef = parseFloat(yt.era)||99;
+          yearSummary = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+            ${miniStat('IP', yt.ip)} ${miniStat('ERA', yt.era, ef<3.5?'good':ef>5?'hot':'')}
+            ${miniStat('K', yt.so, yt.so>=20?'good':'')} ${miniStat('WHIP', yt.whip)}
+          </div>`;
+        }
+
+        const levelTable = ys.length > 0
+          ? (p.type === 'hitter'
+              ? makeHitterSplitsTable(ys, yt)
+              : makePitcherSplitsTable(ys, yt))
+          : '';
+
+        return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleYearDrill('${expandId}')">
+            <div>
+              <span style="font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:.05em;color:var(--accent);">${y}</span>
+              <span style="font-family:'DM Mono',monospace;font-size:.65rem;color:var(--muted);margin-left:8px;">${levelStr}</span>
+            </div>
+            <span id="arr-${expandId}" style="color:var(--muted);font-size:.75rem;transition:transform .15s;display:inline-block;${isYrOpen?'transform:rotate(90deg)':''}">▶</span>
+          </div>
+          ${yearSummary}
+          <div id="${expandId}" style="display:${isYrOpen?'block':'none'};margin-top:8px;">
+            ${levelTable}
+          </div>
+        </div>`;
+      }).join('');
+
+      splitsHtml = `<div class="splits-wrap" style="margin-top:8px;">
+        <button class="splits-toggle ${isYearsExpanded?'open':''}"
+          onclick="toggleYearsDrill(${p.mlb_id})">
+          <span class="arrow">▶</span>
+          Year-by-year breakdown · ${yearsWithData.join(', ')}
+        </button>
+        <div id="ydrills-${p.mlb_id}" style="display:${isYearsExpanded?'block':'none'};margin-top:8px;">
+          ${drillRows}
+        </div>
+      </div>`;
+    }
+
+  } else if (!isAllYears && hasStats && splits.length > 0) {
+    // Single year view: show level splits
+    const tableHtml = p.type === 'hitter'
+      ? makeHitterSplitsTable(splits, totals)
+      : makePitcherSplitsTable(splits, totals);
+
+    splitsHtml = `<div class="splits-wrap">
+      <button class="splits-toggle ${isExpanded?'open':''}"
+        onclick="toggleSplits(${p.mlb_id})">
+        <span class="arrow">▶</span>
+        ${splits.length} level${splits.length>1?'s':''}
+        ${splits.length>1 ? '· '+splits.map(s=>s.level).join(' / ') : '· '+splits[0].level+' — '+splits[0].team}
+      </button>
+      <div id="splits-${p.mlb_id}" style="display:${isExpanded?'block':'none'}">
+        ${tableHtml}
+      </div>
+    </div>`;
+  }
+
+  // Year history badges
+  const yearBadges = ALL_YEARS.filter(y => {
+    const t = statsCache[cacheKey(p.mlb_id, y)]?.totals;
+    return t && (t.pa > 0 || t.ipOuts > 0);
+  }).map(y => `<span class="badge badge-year">${y}</span>`).join('');
+
+  // Level badge
+  let levelBadge = '';
+  if (!isAllYears && hasStats && totals.allLevels) {
+    const levels = totals.allLevels.split(' / ');
+    levelBadge = levels.map(lv => {
+      const isMlb = lv === 'MLB';
+      const style = isMlb
+        ? 'background:#1a3a5c;border-color:#2060a0;color:#60b0ff;'
+        : 'background:#1a2e1a;border-color:#1a5c1a;color:#6bdb6b;';
+      return `<span class="badge" style="${style}">${lv}</span>`;
+    }).join('');
+  }
+
+  return `<div class="player-card ${hasStats?'':'no-stats'} ${p.type}"
+      data-type="${p.type}" data-hasstats="${hasStats}">
+    <div class="card-top">
+      <div>
+        <div class="card-name">${esc(p.name)}</div>
+        <div class="card-meta">
+          <span class="badge badge-pos">${p.pos}</span>
+          ${ageBadge}
+          ${levelBadge}
+          ${yearBadges}
+        </div>
+      </div>
+      <button class="card-remove" onclick="removePlayer(${p.mlb_id})" title="Remove">✕</button>
+    </div>
+    ${quickHtml}
+    ${splitsHtml}
+  </div>`;
+}
+
+function miniStat(label, value, cls='') {
+  return `<span style="font-family:'DM Mono',monospace;font-size:.68rem;background:var(--surface3);border-radius:4px;padding:2px 6px;" class="${cls}">${label}: <span style="color:${cls==='good'?'var(--green)':cls==='hot'?'var(--accent)':'var(--text)'}">${value}</span></span>`;
+}
+
+function toggleYearsDrill(mlb_id) {
+  const el = document.getElementById(`ydrills-${mlb_id}`);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  if (isOpen) expandedYears.delete(mlb_id);
+  else        expandedYears.add(mlb_id);
+  const btn = el.previousElementSibling;
+  if (btn) btn.classList.toggle('open', !isOpen);
+}
+
+function toggleYearDrill(expandId) {
+  const el  = document.getElementById(expandId);
+  const arr = document.getElementById(`arr-${expandId}`);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  if (arr) arr.style.transform = isOpen ? '' : 'rotate(90deg)';
+}
+
+function toggleSplits(mlb_id) {
+  const el = document.getElementById(`splits-${mlb_id}`);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  if (isOpen) expandedCards.delete(mlb_id);
+  else        expandedCards.add(mlb_id);
+  // Update toggle button appearance
+  const btn = el.previousElementSibling;
+  if (btn) btn.classList.toggle('open', !isOpen);
+}
+
+function getFilteredSorted() {
+  let list = [...players];
+  if (currentTab === 'hitters')  list = list.filter(p => p.type === 'hitter');
+  if (currentTab === 'pitchers') list = list.filter(p => p.type === 'pitcher');
+  if (currentTab === 'active')   list = list.filter(p => {
+    const t = currentYear === ALL_YEARS_KEY ? getAllYearsTotals(p) : statsCache[cacheKey(p.mlb_id, currentYear)]?.totals;
+    return t && (t.pa > 0 || t.ipOuts > 0);
+  });
+  if (currentTab === 'nostats')  list = list.filter(p => {
+    const t = currentYear === ALL_YEARS_KEY ? getAllYearsTotals(p) : statsCache[cacheKey(p.mlb_id, currentYear)]?.totals;
+    return !t || (t.pa === 0 && t.ipOuts === 0);
+  });
+
+  const sort = document.getElementById('sort-select')?.value || 'name';
+  list.sort((a, b) => {
+    const sa = currentYear === ALL_YEARS_KEY ? (getAllYearsTotals(a)||{}) : (statsCache[cacheKey(a.mlb_id, currentYear)]?.totals || {});
+    const sb = currentYear === ALL_YEARS_KEY ? (getAllYearsTotals(b)||{}) : (statsCache[cacheKey(b.mlb_id, currentYear)]?.totals || {});
+    if (sort==='name')  return a.name.localeCompare(b.name);
+    if (sort==='level') return (sa.topLevel||'zzz').localeCompare(sb.topLevel||'zzz');
+    if (sort==='pa')    return (sb.pa||0)-(sa.pa||0);
+    if (sort==='avg')   return (parseFloat('0'+(sb.avg||'.000'))||0)-(parseFloat('0'+(sa.avg||'.000'))||0);
+    if (sort==='hr')    return (sb.hr||0)-(sa.hr||0);
+    if (sort==='sb')    return (sb.sb||0)-(sa.sb||0);
+    if (sort==='ip')    return (sb.ipOuts||0)-(sa.ipOuts||0);
+    if (sort==='era')   return (parseFloat(sa.era)||99)-(parseFloat(sb.era)||99);
+    if (sort==='so')    return (sb.so||0)-(sa.so||0);
+    if (sort==='ops')   return (parseFloat('0'+(sb.ops||'.000'))||0)-(parseFloat('0'+(sa.ops||'.000'))||0);
+    if (sort==='iso')   return (parseFloat('0'+(sb.iso||'.000'))||0)-(parseFloat('0'+(sa.iso||'.000'))||0);
+    return 0;
+  });
+  return list;
+}
+
+function renderRoster() {
+  const container = document.getElementById('roster-container');
+  const list = getFilteredSorted();
+
+  if (list.length === 0) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">⚾</div>
+      <div class="empty-title">No players here</div>
+      <div class="empty-desc">Add prospects with the button above</div>
+    </div>`;
+    return;
+  }
+
+  const hitters  = list.filter(p => p.type === 'hitter');
+  const pitchers = list.filter(p => p.type === 'pitcher');
+  const showSections = (currentTab==='all'||currentTab==='active'||currentTab==='nostats') && hitters.length && pitchers.length;
+
+  let html = '';
+  if (hitters.length && currentTab !== 'pitchers') {
+    if (showSections) html += `<div class="section-heading">Hitters</div>`;
+    html += `<div class="player-grid">${hitters.map(makeCard).join('')}</div>`;
+  }
+  if (pitchers.length && currentTab !== 'hitters') {
+    if (showSections) html += `<div class="section-heading" style="margin-top:2rem">Pitchers</div>`;
+    html += `<div class="player-grid">${pitchers.map(makeCard).join('')}</div>`;
+  }
+  container.innerHTML = html;
+}
+
+function renderSummary() {
+  const hitters  = players.filter(p=>p.type==='hitter');
+  const pitchers = players.filter(p=>p.type==='pitcher');
+  const withStats = players.filter(p => {
+    const t = currentYear === ALL_YEARS_KEY ? getAllYearsTotals(p) : statsCache[cacheKey(p.mlb_id, currentYear)]?.totals;
+    return t && (t.pa>0||t.ipOuts>0);
+  });
+
+  let totalHR=0, totalSB=0, bestAvg=0, bestAvgName='—';
+  for (const p of hitters) {
+    const t = currentYear === ALL_YEARS_KEY ? getAllYearsTotals(p) : statsCache[cacheKey(p.mlb_id, currentYear)]?.totals;
+    if (!t||!t.pa) continue;
+    totalHR += t.hr||0;
+    totalSB += t.sb||0;
+    const avg = parseFloat('0'+(t.avg||'.000'))||0;
+    if (avg>bestAvg && t.pa>=20) { bestAvg=avg; bestAvgName=p.name.split(' ').pop(); }
+  }
+
+  let bestEra=99, bestEraName='—', totalK=0;
+  for (const p of pitchers) {
+    const t = currentYear === ALL_YEARS_KEY ? getAllYearsTotals(p) : statsCache[cacheKey(p.mlb_id, currentYear)]?.totals;
+    if (!t||!t.ipOuts) continue;
+    totalK += t.so||0;
+    const era = parseFloat(t.era)||99;
+    if (era<bestEra && t.ipOuts>=9) { bestEra=era; bestEraName=p.name.split(' ').pop(); }
+  }
+
+  document.getElementById('summary-bar').innerHTML = `
+    <div class="summary-card">
+      <div class="summary-label">Prospects</div>
+      <div class="summary-value accent">${players.length}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Has Stats</div>
+      <div class="summary-value green">${withStats.length}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Total HR</div>
+      <div class="summary-value">${totalHR}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Total SB</div>
+      <div class="summary-value">${totalSB}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Best AVG</div>
+      <div class="summary-value amber" style="font-size:1.3rem;padding-top:4px">${bestAvg>0?('.'+((bestAvg*1000).toFixed(0).padStart(3,'0'))):'—'}</div>
+      <div class="summary-sub">${bestAvgName}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Total K</div>
+      <div class="summary-value">${totalK}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Best ERA</div>
+      <div class="summary-value amber" style="font-size:1.3rem;padding-top:4px">${bestEra<99?bestEra.toFixed(2):'—'}</div>
+      <div class="summary-sub">${bestEraName}</div>
+    </div>`;
+}
+
+function renderYearChips() {
+  const container = document.getElementById('year-chips');
+  const allBtn = `<button class="year-chip ${currentYear===ALL_YEARS_KEY?'active':''}"
+    onclick="switchYear('${ALL_YEARS_KEY}',this)"
+    style="${currentYear===ALL_YEARS_KEY?'':''}">All Years</button>`;
+  const yearBtns = ALL_YEARS.map(y =>
+    `<button class="year-chip ${y===currentYear?'active':''}" onclick="switchYear('${y}',this)">${y}</button>`
+  ).join('');
+  container.innerHTML = allBtn + yearBtns;
+}
+
+// ── YEAR SWITCHING ────────────────────────────────────────────────────────────
+async function switchYear(year, el) {
+  currentYear = year;
+  const label = year === ALL_YEARS_KEY ? 'All Years' : `${year} Season`;
+  document.getElementById('season-label').textContent = label;
+  document.querySelectorAll('.year-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+
+  if (year === ALL_YEARS_KEY) {
+    // Ensure all years are loaded
+    const needsLoad = [];
+    for (const y of ALL_YEARS) {
+      const missing = players.filter(p => p.mlb_id && !statsCache[cacheKey(p.mlb_id, y)]);
+      needsLoad.push(...missing.map(p => loadPlayerYear(p, y)));
+    }
+    if (needsLoad.length > 0) {
+      document.getElementById('roster-container').innerHTML =
+        `<div class="empty-state"><div class="loading-spinner"></div><div class="empty-desc" style="margin-top:.75rem">Loading all years…</div></div>`;
+      await Promise.all(needsLoad);
+      saveStatsCache();
+    }
+  } else {
+    const missing = players.filter(p => p.mlb_id && !statsCache[cacheKey(p.mlb_id, year)]);
+    if (missing.length > 0) {
+      document.getElementById('roster-container').innerHTML =
+        `<div class="empty-state"><div class="loading-spinner"></div><div class="empty-desc" style="margin-top:.75rem">Loading ${year} stats…</div></div>`;
+      await Promise.all(missing.map(p => loadPlayerYear(p, year)));
+      saveStatsCache();
+    }
+  }
+
+  renderRoster();
+  renderSummary();
+}
+
+// ── SEARCH & ADD ──────────────────────────────────────────────────────────────
+async function searchPlayer() {
+  const q = document.getElementById('search-input').value.trim();
+  if (q.length < 2) return;
+  const btn = document.getElementById('search-btn');
+  const results = document.getElementById('search-results');
+  btn.disabled = true;
+  btn.textContent = 'Searching…';
+  results.innerHTML = '<div class="search-status"><span class="loading-spinner"></span> Searching…</div>';
+  try {
+    // Run both endpoints in parallel:
+    // 1) /people/search covers MiLB + some MLB
+    // 2) /people?search= covers active MLB roster players more reliably
+    const [r1, r2] = await Promise.allSettled([
+      fetch(`${MLB_API}/people/search?names=${encodeURIComponent(q)}&sportIds=1,11,12,13,14,16,17`).then(r=>r.json()),
+      fetch(`${MLB_API}/people?search=${encodeURIComponent(q)}&sportId=1&hydrate=currentTeam`).then(r=>r.json()),
+    ]);
+
+    // Merge results, dedupe by id
+    const seen = new Map();
+    for (const res of [r1, r2]) {
+      if (res.status !== 'fulfilled') continue;
+      const people = res.value.people || [];
+      for (const p of people) {
+        if (!seen.has(p.id)) seen.set(p.id, p);
+      }
+    }
+
+    const people = [...seen.values()];
+
+    if (people.length === 0) {
+      results.innerHTML = '<div class="search-status">No players found. Try a different spelling.</div>';
+      return;
+    }
+
+    // Sort: exact name matches first, then partial
+    const ql = q.toLowerCase();
+    people.sort((a, b) => {
+      const aExact = a.fullName?.toLowerCase().startsWith(ql) ? 0 : 1;
+      const bExact = b.fullName?.toLowerCase().startsWith(ql) ? 0 : 1;
+      return aExact - bExact;
+    });
+
+    const addedIds = new Set(players.map(p => p.mlb_id));
+
+    results.innerHTML = people.slice(0, 20).map(person => {
+      const already  = addedIds.has(person.id);
+      const pos      = person.primaryPosition?.abbreviation || '?';
+      const team     = person.currentTeam?.name || 'Free Agent';
+      // Determine if MLB or MiLB based on sport
+      const sportId  = person.sport?.id || person.primarySport?.id;
+      const isMlb    = sportId === 1 || (!sportId && person.mlbDebutDate);
+      const levelTag = isMlb
+        ? `<span style="font-family:'DM Mono',monospace;font-size:.6rem;background:#1a3a5c;border:1px solid #2060a0;color:#60b0ff;padding:1px 6px;border-radius:3px;margin-left:4px;">MLB</span>`
+        : `<span style="font-family:'DM Mono',monospace;font-size:.6rem;background:#1a2e1a;border:1px solid #1a5c1a;color:#6bdb6b;padding:1px 6px;border-radius:3px;margin-left:4px;">MiLB</span>`;
+
+      return `<div class="result-item ${already ? 'already-added' : ''}"
+          onclick="addFromSearch(${person.id},'${esc(person.fullName)}','${pos}','${esc(team)}')">
+        <div>
+          <div class="result-name">${esc(person.fullName)} ${levelTag}</div>
+          <div class="result-meta">${pos} · ${esc(team)} · ID: ${person.id}</div>
+        </div>
+        <button class="result-add">${already ? 'Added' : '+ Add'}</button>
+      </div>`;
+    }).join('');
+
+  } catch(e) {
+    results.innerHTML = `<div class="search-status" style="color:var(--red)">Search failed: ${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Search';
+  }
+}
+
+async function addFromSearch(mlb_id, name, pos, team) {
+  if (players.find(p=>p.mlb_id===mlb_id)) { toast(`${name} already on roster`,'error'); return; }
+  const p = {name, mlb_id, pos, org:team, type:addType};
+  players.push(p);
+  saveRoster();
+
+  toast(`${name} added! Loading stats…`, 'success');
+
+  // Load bio and stats for all years in parallel
+  await Promise.all([fetchBio(mlb_id), ...ALL_YEARS.map(y => loadPlayerYear(p, y))]);
+  saveStatsCache();
+
+  renderRoster();
+  renderSummary();
+  toast(`${name} stats loaded!`, 'success');
+
+  document.querySelectorAll('.result-item').forEach(item => {
+    if (item.querySelector('.result-meta')?.textContent.includes(`ID: ${mlb_id}`)) {
+      item.classList.add('already-added');
+      item.querySelector('.result-add').textContent = 'Added';
+    }
+  });
+}
+
+function addManual() {
+  const name = document.getElementById('manual-name').value.trim();
+  const id   = parseInt(document.getElementById('manual-id').value);
+  const pos  = document.getElementById('manual-pos').value.trim() || '?';
+  if (!name||!id) { toast('Name and MLB ID required','error'); return; }
+  if (players.find(p=>p.mlb_id===id)) { toast('Already on roster','error'); return; }
+  const p = {name, mlb_id:id, pos, org:'?', type:addType};
+  players.push(p);
+  saveRoster();
+  document.getElementById('manual-name').value='';
+  document.getElementById('manual-id').value='';
+  document.getElementById('manual-pos').value='';
+  Promise.all([fetchBio(id), ...ALL_YEARS.map(y=>loadPlayerYear(p,y))]).then(()=>{
+    saveStatsCache(); saveBios(); renderRoster(); renderSummary();
+  });
+  renderRoster();
+  renderSummary();
+  toast(`${name} added!`,'success');
+}
+
+function removePlayer(mlb_id) {
+  const p = players.find(x=>x.mlb_id===mlb_id);
+  if (!p) return;
+  if (!confirm(`Remove ${p.name} from your roster?`)) return;
+  players = players.filter(x=>x.mlb_id!==mlb_id);
+  ALL_YEARS.forEach(y => delete statsCache[cacheKey(mlb_id,y)]);
+  expandedCards.delete(mlb_id);
+  saveRoster(); saveStatsCache();
+  renderRoster(); renderSummary();
+  toast(`${p.name} removed`,'success');
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────────────────────
+function switchTab(tab, el) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderRoster();
+}
+function openPanel() {
+  document.getElementById('panel-overlay').classList.add('open');
+  document.getElementById('search-input').focus();
+}
+function closePanel() {
+  document.getElementById('panel-overlay').classList.remove('open');
+  document.getElementById('search-results').innerHTML =
+    '<div class="search-status">Search for a player above to add them to your roster</div>';
+  document.getElementById('search-input').value='';
+}
+function handleOverlayClick(e) {
+  if (e.target===document.getElementById('panel-overlay')) closePanel();
+}
+function setType(t) {
+  addType=t;
+  document.getElementById('type-hitter').classList.toggle('selected',t==='hitter');
+  document.getElementById('type-pitcher').classList.toggle('selected',t==='pitcher');
+}
+function toast(msg,type='success') {
+  const el = document.getElementById('toast');
+  el.textContent=msg; el.className=`toast ${type} show`;
+  setTimeout(()=>el.classList.remove('show'),3000);
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePanel();});
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  loadRoster();
+  loadStatsCache();
+  loadBios();
+  renderYearChips();
+  renderSummary();
+  renderRoster();
+
+  // Load current year stats for any missing players
+  const missing = players.filter(p => p.mlb_id && !statsCache[cacheKey(p.mlb_id, currentYear)]);
+  if (missing.length > 0) {
+    await Promise.all(missing.map(p => loadPlayerYear(p, currentYear)));
+    saveStatsCache();
+    const now = new Date();
+    document.getElementById('last-updated').textContent =
+      'Updated ' + now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    renderRoster();
+    renderSummary();
+  }
+
+  // Fetch bios for any players we don't have yet
+  const missingBios = players.filter(p => p.mlb_id && !playerBios[p.mlb_id]);
+  if (missingBios.length > 0) {
+    await Promise.all(missingBios.map(p => fetchBio(p.mlb_id)));
+    renderRoster();
+  }
+
+  // Background-load prior years quietly
+  const priorYears = ALL_YEARS.filter(y=>y!==currentYear);
+  for (const year of priorYears) {
+    const m = players.filter(p => p.mlb_id && !statsCache[cacheKey(p.mlb_id, year)]);
+    if (m.length > 0) {
+      await Promise.all(m.map(p => loadPlayerYear(p, year)));
+      saveStatsCache();
+      renderRoster(); // re-render so year badges update
+    }
+  }
+}
+
+init();
+</script>
+</body>
+</html>
