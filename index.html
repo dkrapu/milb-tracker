@@ -207,6 +207,48 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .gamelog-loading{text-align:center;padding:1.5rem;color:var(--muted);font-size:.8rem;font-style:italic;}
 .gamelog-empty{text-align:center;padding:1rem;color:var(--muted);font-size:.75rem;font-style:italic;}
 .new-badge{font-family:'DM Mono',monospace;font-size:.58rem;background:rgba(232,255,71,.15);border:1px solid rgba(232,255,71,.35);color:var(--accent);padding:2px 6px;border-radius:3px;margin-left:4px;}
+
+/* ── RANKINGS VIEW ── */
+.rankings-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:1.25rem;}
+.rank-filter-chip{padding:4px 12px;border-radius:100px;font-size:.75rem;font-weight:500;cursor:pointer;border:1px solid var(--border2);background:transparent;color:var(--muted);transition:all .15s;white-space:nowrap;}
+.rank-filter-chip:hover{color:var(--text);border-color:rgba(255,255,255,.25);}
+.rank-filter-chip.active{background:var(--accent);color:#0a0c10;border-color:var(--accent);}
+.rankings-table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border);}
+.rankings-table{width:100%;border-collapse:collapse;font-size:.78rem;}
+.rankings-table th{background:var(--surface2);font-family:'DM Mono',monospace;font-size:.6rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 12px;text-align:left;border-bottom:1px solid var(--border2);white-space:nowrap;cursor:pointer;user-select:none;}
+.rankings-table th:hover{color:var(--text);}
+.rankings-table th.sorted{color:var(--accent);}
+.rankings-table td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle;}
+.rankings-table tr:last-child td{border-bottom:none;}
+.rankings-table tr:hover td{background:var(--surface2);}
+.rankings-table tr.my-player td{background:rgba(232,255,71,.04);}
+.rankings-table tr.my-player td:first-child{border-left:2px solid var(--accent);}
+.rank-num{font-family:'DM Mono',monospace;color:var(--muted);font-size:.72rem;}
+.rank-name{font-weight:600;color:var(--text);}
+.rank-name.my-player-name{color:var(--accent);}
+.my-badge{font-family:'DM Mono',monospace;font-size:.55rem;background:rgba(232,255,71,.15);border:1px solid rgba(232,255,71,.35);color:var(--accent);padding:1px 5px;border-radius:3px;margin-left:5px;vertical-align:middle;}
+.fv-badge{font-family:'DM Mono',monospace;font-size:.72rem;padding:2px 8px;border-radius:4px;font-weight:600;}
+.fv-70{background:rgba(79,255,176,.15);color:var(--green);border:1px solid rgba(79,255,176,.3);}
+.fv-65{background:rgba(79,255,176,.1);color:#7ef7c4;border:1px solid rgba(79,255,176,.2);}
+.fv-60{background:rgba(232,255,71,.1);color:var(--accent);border:1px solid rgba(232,255,71,.2);}
+.fv-55{background:rgba(255,179,71,.1);color:var(--amber);border:1px solid rgba(255,179,71,.2);}
+.fv-50{background:var(--surface3);color:var(--text);border:1px solid var(--border2);}
+.fv-low{background:var(--surface2);color:var(--muted);border:1px solid var(--border);}
+.eta-badge{font-family:'DM Mono',monospace;font-size:.68rem;color:var(--muted);}
+.eta-now{color:var(--green)!important;font-weight:600;}
+.risk-low{color:var(--green);font-family:'DM Mono',monospace;font-size:.68rem;}
+.risk-med{color:var(--amber);font-family:'DM Mono',monospace;font-size:.68rem;}
+.risk-high{color:#ff8c4a;font-family:'DM Mono',monospace;font-size:.68rem;}
+.risk-ext{color:var(--red);font-family:'DM Mono',monospace;font-size:.68rem;}
+.grade-cell{font-family:'DM Mono',monospace;font-size:.7rem;text-align:center;white-space:nowrap;}
+.grade-plus{color:var(--green);}
+.grade-avg{color:var(--text);}
+.grade-below{color:var(--muted);}
+.rank-search{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:.82rem;padding:6px 12px;outline:none;width:200px;}
+.rank-search:focus{border-color:var(--accent);}
+.rank-search::placeholder{color:var(--muted);}
+.rankings-meta{font-family:'DM Mono',monospace;font-size:.65rem;color:var(--muted);margin-left:auto;}
+.no-rank-msg{text-align:center;padding:3rem;color:var(--muted);font-size:.85rem;}
 </style>
 </head>
 <body>
@@ -242,6 +284,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <div class="tab" onclick="switchTab('active',this)">Has Stats</div>
   <div class="tab" onclick="switchTab('nostats',this)">No Stats Yet</div>
   <div class="tab" onclick="switchTab('gamelogs',this)">Recent Activity</div>
+  <div class="tab" onclick="switchTab('rankings',this)">Rankings</div>
 </div>
 
 <!-- MAIN -->
@@ -1514,20 +1557,216 @@ async function renderGameLogs() {
   container.innerHTML = html;
 }
 
+// ── RANKINGS FUNCTIONS ────────────────────────────────────────────────────────
+
+let rankSortCol = 'fg_rank';
+let rankSortDir = 'asc';
+let rankFilter  = 'all';  // 'all', 'top100', 'top500', 'roster', 'hitter', 'pitcher'
+let rankSearch  = '';
+
+async function loadRankings() {
+  if (rankingsCache && Date.now() - rankingsCache.ts < 60 * 60 * 1000) return; // 1hr cache
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/prospect_rankings?select=*&order=fg_rank.asc.nullslast&limit=1000`;
+    const r = await fetch(url, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    rankingsCache = { ts: Date.now(), prospects: data };
+  } catch(e) {
+    console.error('loadRankings:', e);
+  }
+}
+
+function fvClass(fv) {
+  if (!fv) return 'fv-low';
+  if (fv >= 70) return 'fv-70';
+  if (fv >= 65) return 'fv-65';
+  if (fv >= 60) return 'fv-60';
+  if (fv >= 55) return 'fv-55';
+  if (fv >= 50) return 'fv-50';
+  return 'fv-low';
+}
+
+function riskClass(risk) {
+  if (!risk) return '';
+  const r = risk.toLowerCase();
+  if (r === 'low') return 'risk-low';
+  if (r === 'med') return 'risk-med';
+  if (r === 'high') return 'risk-high';
+  if (r === 'ext') return 'risk-ext';
+  return '';
+}
+
+function gradeCell(present, future) {
+  if (!present && !future) return '<td class="grade-cell" style="color:var(--border2)">—</td>';
+  const val = future || present;
+  const cls = val >= 60 ? 'grade-plus' : val >= 50 ? 'grade-avg' : 'grade-below';
+  const display = (present && future && present !== future)
+    ? `${present}/${future}`
+    : `${val}`;
+  return `<td class="grade-cell ${cls}">${display}</td>`;
+}
+
+function etaDisplay(eta) {
+  if (!eta) return '<span class="eta-badge">—</span>';
+  const year = parseInt(eta);
+  const now  = new Date().getFullYear();
+  if (year <= now) return `<span class="eta-badge eta-now">${eta}</span>`;
+  return `<span class="eta-badge">${eta}</span>`;
+}
+
+function isHitterProspect(p) {
+  // If they have any hitter grades, treat as hitter
+  return !!(p.hit_future || p.hit_present || p.game_future || p.spd_future);
+}
+
+function renderRankingsView() {
+  const container = document.getElementById('roster-container');
+
+  if (!rankingsCache || !rankingsCache.prospects.length) {
+    container.innerHTML = '<div class="no-rank-msg">Loading rankings…</div>';
+    return;
+  }
+
+  const myIds = new Set(players.map(p => p.mlb_id));
+  const myNames = new Set(players.map(p => p.name.toLowerCase()));
+  const currentYear = new Date().getFullYear();
+
+  // Filter
+  let list = rankingsCache.prospects.filter(p => {
+    if (rankFilter === 'top100')  return p.fg_rank && p.fg_rank <= 100;
+    if (rankFilter === 'top500')  return p.fg_rank && p.fg_rank <= 500;
+    if (rankFilter === 'roster')  return myIds.has(p.mlb_id);
+    if (rankFilter === 'hitter')  return isHitterProspect(p);
+    if (rankFilter === 'pitcher') return !isHitterProspect(p);
+    return true;
+  });
+
+  // Search
+  if (rankSearch.trim()) {
+    const q = rankSearch.trim().toLowerCase();
+    list = list.filter(p => p.name && p.name.toLowerCase().includes(q));
+  }
+
+  // Sort
+  list.sort((a, b) => {
+    let av = a[rankSortCol], bv = b[rankSortCol];
+    // Nulls always last
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return rankSortDir === 'asc' ? cmp : -cmp;
+  });
+
+  function thSort(col, label, title='') {
+    const active = rankSortCol === col;
+    const arrow  = active ? (rankSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    return `<th class="${active ? 'sorted' : ''}" onclick="sortRankings('${col}')" title="${title}">${label}${arrow}</th>`;
+  }
+
+  const isHitterView = rankFilter === 'pitcher' ? false : true;
+  const gradeHeaders = isHitterView
+    ? `${thSort('hit_future','HIT','Hit tool (future)')}${thSort('game_future','PWR','Game power (future)')}${thSort('raw_future','RAW','Raw power (future)')}${thSort('spd_future','SPD','Speed (future)')}${thSort('fld_future','FLD','Fielding (future)')}`
+    : `${thSort('fb_future','FB','Fastball (future)')}${thSort('sl_future','SL','Slider (future)')}${thSort('cb_future','CB','Curveball (future)')}${thSort('ch_future','CH','Changeup (future)')}${thSort('cmd_future','CMD','Command (future)')}`;
+
+  const rows = list.slice(0, 500).map(p => {
+    const isOnRoster = myIds.has(p.mlb_id);
+    const rowCls = isOnRoster ? 'my-player' : '';
+    const myBadge = isOnRoster ? '<span class="my-badge">MINE</span>' : '';
+    const nameCls = isOnRoster ? 'my-player-name' : '';
+    const fv = p.fg_fv ? `<span class="fv-badge ${fvClass(p.fg_fv)}">${p.fg_fv}</span>` : '—';
+    const risk = p.risk ? `<span class="${riskClass(p.risk)}">${p.risk}</span>` : '—';
+    const level = p.current_level
+      ? `<span style="font-family:'DM Mono',monospace;font-size:.65rem;">${p.current_level}</span>`
+      : '—';
+
+    const hitterGrades = `${gradeCell(p.hit_present,p.hit_future)}${gradeCell(p.game_present,p.game_future)}${gradeCell(p.raw_present,p.raw_future)}${gradeCell(p.spd_present,p.spd_future)}${gradeCell(p.fld_present,p.fld_future)}`;
+    const pitcherGrades = `${gradeCell(p.fb_present,p.fb_future)}${gradeCell(p.sl_present,p.sl_future)}${gradeCell(p.cb_present,p.cb_future)}${gradeCell(p.ch_present,p.ch_future)}${gradeCell(p.cmd_present,p.cmd_future)}`;
+    const grades = isHitterView ? hitterGrades : pitcherGrades;
+
+    return `<tr class="${rowCls}">
+      <td class="rank-num">${p.fg_rank || '—'}</td>
+      <td><span class="rank-name ${nameCls}">${esc(p.name||'')}</span>${myBadge}</td>
+      <td>${fv}</td>
+      <td>${etaDisplay(p.eta)}</td>
+      <td>${risk}</td>
+      <td>${level}</td>
+      ${grades}
+    </tr>`;
+  }).join('');
+
+  const updatedStr = rankingsCache
+    ? new Date(rankingsCache.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+    : '—';
+
+  container.innerHTML = `
+    <div class="rankings-controls">
+      <button class="rank-filter-chip ${rankFilter==='all'?'active':''}"     onclick="setRankFilter('all')">All (${rankingsCache.prospects.length})</button>
+      <button class="rank-filter-chip ${rankFilter==='top100'?'active':''}"  onclick="setRankFilter('top100')">Top 100</button>
+      <button class="rank-filter-chip ${rankFilter==='top500'?'active':''}"  onclick="setRankFilter('top500')">Top 500</button>
+      <button class="rank-filter-chip ${rankFilter==='roster'?'active':''}"  onclick="setRankFilter('roster')">My Roster (${[...myIds].filter(id=>rankingsCache.prospects.find(p=>p.mlb_id===id)).length})</button>
+      <button class="rank-filter-chip ${rankFilter==='hitter'?'active':''}"  onclick="setRankFilter('hitter')">Hitters</button>
+      <button class="rank-filter-chip ${rankFilter==='pitcher'?'active':''}" onclick="setRankFilter('pitcher')">Pitchers</button>
+      <input class="rank-search" type="text" placeholder="Search name…"
+        value="${esc(rankSearch)}" oninput="rankSearch=this.value;renderRankingsView()" />
+      <span class="rankings-meta">Source: FanGraphs · Updated ${updatedStr}</span>
+    </div>
+    <div class="rankings-table-wrap">
+      <table class="rankings-table">
+        <thead><tr>
+          ${thSort('fg_rank','Rank')}
+          ${thSort('name','Name')}
+          ${thSort('fg_fv','FV','Future Value (20-80)')}
+          ${thSort('eta','ETA','Expected MLB debut')}
+          ${thSort('risk','Risk')}
+          ${thSort('current_level','Level')}
+          ${gradeHeaders}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    ${list.length > 500 ? `<div style="text-align:center;padding:1rem;font-size:.78rem;color:var(--muted);">Showing top 500 of ${list.length} results. Use filters or search to narrow down.</div>` : ''}
+  `;
+}
+
+function setRankFilter(f) {
+  rankFilter = f;
+  renderRankingsView();
+}
+
+function sortRankings(col) {
+  if (rankSortCol === col) {
+    rankSortDir = rankSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    rankSortCol = col;
+    rankSortDir = col === 'name' ? 'asc' : 'asc';
+  }
+  renderRankingsView();
+}
+
 function switchTab(tab, el) {
   currentTab = tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
+
+  const hideChrome = tab === 'gamelogs' || tab === 'rankings';
+  document.querySelector('.year-bar').style.display   = hideChrome ? 'none' : '';
+  document.querySelector('.filter-row').style.display = hideChrome ? 'none' : '';
+  document.getElementById('summary-bar').style.display = hideChrome ? 'none' : '';
+
   if (tab === 'gamelogs') {
-    // Hide year bar and sort row — not relevant for game logs
-    document.querySelector('.year-bar').style.display = 'none';
-    document.querySelector('.filter-row').style.display = 'none';
-    document.getElementById('summary-bar').style.display = 'none';
     renderGameLogs();
+  } else if (tab === 'rankings') {
+    // Show loading state immediately
+    document.getElementById('roster-container').innerHTML =
+      '<div class="no-rank-msg"><span class="loading-spinner"></span> Loading rankings from database…</div>';
+    loadRankings().then(() => renderRankingsView());
   } else {
-    document.querySelector('.year-bar').style.display = '';
-    document.querySelector('.filter-row').style.display = '';
-    document.getElementById('summary-bar').style.display = '';
     renderRoster();
   }
 }
