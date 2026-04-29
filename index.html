@@ -1567,7 +1567,7 @@ let rankSearch  = '';
 let rankOrg     = '';     // filter by org abbreviation e.g. 'NYY'
 
 // Columns to fetch — excludes heavy grade columns initially
-const RANK_COLS = 'mlb_id,name,fg_rank,fg_org_rank,fg_fv,eta,risk,current_level,hit_future,game_future,raw_future,spd_future,fld_future,fb_future,sl_future,cb_future,ch_future,cmd_future,hit_present,game_present,raw_present,spd_present,fld_present,fb_present,sl_present,cb_present,ch_present,cmd_present';
+const RANK_COLS = 'mlb_id,name,org,pos,fg_rank,fg_org_rank,fg_fv,eta,risk,current_level,hit_future,game_future,raw_future,spd_future,fld_future,fb_future,sl_future,cb_future,ch_future,cmd_future,hit_present,game_present,raw_present,spd_present,fld_present,fb_present,sl_present,cb_present,ch_present,cmd_present';
 
 async function loadRankings() {
   if (rankingsCache && Date.now() - rankingsCache.ts < 60 * 60 * 1000) return;
@@ -1665,7 +1665,9 @@ function buildRow(p, myIds, isHitterView) {
   const hg = `${gradeCell(p.hit_present,p.hit_future)}${gradeCell(p.game_present,p.game_future)}${gradeCell(p.raw_present,p.raw_future)}${gradeCell(p.spd_present,p.spd_future)}${gradeCell(p.fld_present,p.fld_future)}`;
   const pg = `${gradeCell(p.fb_present,p.fb_future)}${gradeCell(p.sl_present,p.sl_future)}${gradeCell(p.cb_present,p.cb_future)}${gradeCell(p.ch_present,p.ch_future)}${gradeCell(p.cmd_present,p.cmd_future)}`;
   const orgRank = p.fg_org_rank ? `<span class="rank-num">#${p.fg_org_rank}</span>` : '—';
-  return `<tr class="${rowCls}"><td class="rank-num">${p.fg_rank||'—'}</td><td><span class="rank-name ${nameCls}">${esc(p.name||'')}</span>${myBadge}</td><td>${fv}</td><td>${etaDisplay(p.eta)}</td><td>${risk}</td><td>${level}</td><td>${orgRank}</td>${isHitterView?hg:pg}</tr>`;
+  const orgTeam = p.org  ? `<span style="font-family:'DM Mono',monospace;font-size:.65rem;">${p.org}</span>`  : '—';
+  const posCell = p.pos  ? `<span style="font-family:'DM Mono',monospace;font-size:.65rem;">${p.pos}</span>`   : '—';
+  return `<tr class="${rowCls}"><td class="rank-num">${p.fg_rank||'—'}</td><td><span class="rank-name ${nameCls}">${esc(p.name||'')}</span>${myBadge}</td><td>${posCell}</td><td>${orgTeam}</td><td>${fv}</td><td>${etaDisplay(p.eta)}</td><td>${risk}</td><td>${level}</td><td>${orgRank}</td>${isHitterView?hg:pg}</tr>`;
 }
 
 function getFilteredSortedList() {
@@ -1676,11 +1678,8 @@ function getFilteredSortedList() {
     if (rankFilter === 'roster')  { if (!myIds.has(p.mlb_id))           return false; }
     if (rankFilter === 'hitter')  { if (!isHitterProspect(p))           return false; }
     if (rankFilter === 'pitcher') { if (isHitterProspect(p))            return false; }
-    // Org filter — match players on our roster who belong to that org
-    if (rankOrg) {
-      const orgIds = new Set(players.filter(pl => pl.org === rankOrg).map(pl => pl.mlb_id));
-      if (!orgIds.has(p.mlb_id)) return false;
-    }
+    // Org filter — use team from rankings data directly
+    if (rankOrg && p.org !== rankOrg) return false;
     return true;
   });
   if (rankSearch.trim()) {
@@ -1727,8 +1726,8 @@ function renderRankingsView() {
   const isHitterView = rankFilter !== 'pitcher';
   const updatedStr = new Date(rankingsCache.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 
-  // Build org options from players on our roster
-  const orgList = [...new Set(players.map(p => p.org).filter(Boolean))].sort();
+  // Build org options from rankings data (covers all teams, not just roster)
+  const orgList = [...new Set((rankingsCache?.prospects||[]).map(p => p.org).filter(Boolean))].sort();
   const orgOptions = `<option value="">All Orgs</option>` +
     orgList.map(o => `<option value="${o}" ${rankOrg===o?'selected':''}>${o}</option>`).join('');
 
@@ -1766,6 +1765,8 @@ function renderRankingsView() {
         <thead><tr>
           ${thSort('fg_rank','Rank','Overall FanGraphs rank')}
           ${thSort('name','Name')}
+          ${thSort('pos','POS')}
+          ${thSort('org','Team')}
           ${thSort('fg_fv','FV','Future Value (20-80)')}
           ${thSort('eta','ETA','Expected MLB debut')}
           ${thSort('risk','Risk')}
